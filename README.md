@@ -1,4 +1,4 @@
-# NEU MOOC GUI 智能答题助手
+# NEUMOOC 智能答题助手
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Version](https://img.shields.io/badge/version-1.5.1-brightgreen.svg)
@@ -6,11 +6,6 @@
 
 一个为 NEU MOOC 平台设计的油猴（Tampermonkey）脚本，旨在通过 AI 技术辅助用户进行课程测验，实现自动化答题流程，并提供便捷的交互界面。
 
-## 📸 脚本截图
-
-*建议在此处放置一张脚本运行时的截图，以便用户快速了解其外观和功能。*
-
-![脚本截图](./docs/screenshot.png)
 
 ## ✨ 主要功能
 
