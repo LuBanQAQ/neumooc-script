@@ -1,17 +1,23 @@
 // ==UserScript==
-// @name         NEUMOOC 智能答题助手 (v0.9.1 最终修正版)
+// @name         NEU MOOC 智能答题助手 (GitHub Release)
 // @namespace    http://tampermonkey.net/
-// @version      0.9.1
-// @description  [最终修正版] 修复了因代码不完整导致的功能失效问题，并根据按钮的`display: none;`样式正确判断翻页结束，确保自动停止稳定可靠。
-// @author       LuBan
+// @version      1.0
+// @description  功能集大成版。包含AI答题、多选等待、可靠的自动停止机制、SweetAlert2美化弹窗、可拖动/悬浮球最小化面板，并已配置GitHub自动更新。
+// @author       LuBanQAQ
+// @license      MIT
 // @match        https://neustudydl.neumooc.com/*
-
+// @downloadURL  https://raw.githubusercontent.com/LuBanQAQ/neumooc-script/main/neumooc-script.user.js
+// @updateURL    https://raw.githubusercontent.com/LuBanQAQ/neumooc-script/main/neumooc-script.user.js
 // @grant        GM_addStyle
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @grant        GM_getResourceText
+// @require      https://cdn.jsdelivr.net/npm/sweetalert2@11
+// @resource     sweetalert2_css https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css
 // @connect      *
 // ==/UserScript==
+
 
 (function () {
     "use strict";
