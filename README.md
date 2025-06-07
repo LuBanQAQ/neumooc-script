@@ -1,7 +1,7 @@
 # NEUMOOC 智能答题助手
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-1.5.1-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.0.0-brightgreen.svg)
 ![Language](https://img.shields.io/badge/language-JavaScript-yellow.svg)
 
 一个为 NEU MOOC 平台设计的油猴（Tampermonkey）脚本，旨在通过 AI 技术辅助用户进行课程测验，实现自动化答题流程，并提供便捷的交互界面。
@@ -36,12 +36,12 @@
 **方式一：从 Greasy Fork 安装 (推荐)**
 *（当您将项目发布到 Greasy Fork 后，可以将此链接替换成您的发布地址）*
 
-[点击此处从 Greasy Fork 安装](https://greasyfork.org/zh-CN/)
+[点击此处从 Greasy Fork 安装](https://greasyfork.org/zh-CN/scripts/538664-neu-mooc-%E6%99%BA%E8%83%BD%E7%AD%94%E9%A2%98%E5%8A%A9%E6%89%8B-github-release)
 
 **方式二：手动安装**
 1.  打开 Tampermonkey 管理面板。
 2.  点击“添加新脚本”选项卡。
-3.  将项目中的 `.js` 文件（例如 `NEU_MOOC_Helper.js`）的**全部内容**复制并粘贴到编辑器中。
+3.  将项目中的 `.js` 文件的**全部内容**复制并粘贴到编辑器中。
 4.  按下 `Ctrl` + `S` 保存脚本。
 
 ### 3. 配置 AI 参数
