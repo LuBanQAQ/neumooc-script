@@ -4,7 +4,7 @@
 ![Version](https://img.shields.io/badge/version-1.0.0-brightgreen.svg)
 ![Language](https://img.shields.io/badge/language-JavaScript-yellow.svg)
 
-一个为 NEU MOOC 平台设计的油猴（Tampermonkey）脚本，旨在通过 AI 技术辅助用户进行课程测验，实现自动化答题流程，并提供便捷的交互界面。
+一个为东软NEUMOOC平台设计的油猴（Tampermonkey）脚本，旨在通过 AI 技术辅助用户进行课程测验，实现自动化答题流程，并提供便捷的交互界面。
 
 
 ## ✨ 主要功能
@@ -54,6 +54,8 @@
     - `API Endpoint` (可选, 默认为 OpenAI 官方地址)
     - `Model` (可选, 默认为 `gpt-3.5-turbo`)
 3.  点击 **保存配置** 按钮。配置成功后会有提示。
+
+推荐[阿里云百炼大模型](https://dashi.aliyun.com/activity/mobi?userCode=jgg8c9cg) 新用户注册免费领取Deepseek-R1 额度
 
 ## 📖 使用方法
 
