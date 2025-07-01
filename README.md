@@ -34,7 +34,6 @@
 ### 2. 安装本脚本
 
 **方式一：从 Greasy Fork 安装 (推荐)**
-*（当您将项目发布到 Greasy Fork 后，可以将此链接替换成您的发布地址）*
 
 [点击此处从 Greasy Fork 安装](https://greasyfork.org/zh-CN/scripts/538664-neu-mooc-%E6%99%BA%E8%83%BD%E7%AD%94%E9%A2%98%E5%8A%A9%E6%89%8B-github-release)
 
