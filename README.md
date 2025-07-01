@@ -55,6 +55,7 @@
 3.  点击 **保存配置** 按钮。配置成功后会有提示。
 
 推荐[阿里云百炼大模型](https://dashi.aliyun.com/activity/mobi?userCode=jgg8c9cg) 新用户注册免费领取Deepseek-R1 额度
+[API参考](https://help.aliyun.com/zh/model-studio/use-qwen-by-calling-api?spm=a2c4g.11186623.help-menu-2400256.d_2_1_0.21ce7297Q8XdZJ&scm=20140722.H_2712576._.OR_help-T_cn~zh-V_1)
 
 ## 📖 使用方法
 
