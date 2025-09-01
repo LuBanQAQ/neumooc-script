@@ -2,7 +2,7 @@
 // @name         NEUMOOC 智能助手
 // @namespace    http://tampermonkey.net/
 // @version      1.0.2
-// @description  NEUMOOC 智能助手
+// @description  NEUMOOC 智能助手 包含各种功能
 // @author       LuBanQAQ
 // @license      MIT
 // @match        https://neustudydl.neumooc.com/*
