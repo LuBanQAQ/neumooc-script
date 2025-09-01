@@ -2,7 +2,7 @@
 // @name         NEUMOOC 智能助手
 // @namespace    http://tampermonkey.net/
 // @version      1.0.2
-// @description  功能集大成版。包含AI答题、多选等待、可靠的自动停止机制、SweetAlert2美化弹窗、可拖动/悬浮球最小化面板，并已配置GitHub自动更新。
+// @description  NEUMOOC 智能助手
 // @author       LuBanQAQ
 // @license      MIT
 // @match        https://neustudydl.neumooc.com/*
