@@ -77,7 +77,7 @@
     panel.id = "control-panel";
     panel.innerHTML = `
         <div id="control-panel-header">
-            <span>🎓 智能答题助手 v1.0.1 </span>
+            <span>🎓 智能助手 v1.0.2 </span>
             <span id="minimize-btn">—</span>
         </div>
         <div id="control-panel-body">
@@ -97,6 +97,7 @@
                 <button id="copy-question-btn" class="btn-info">📋 复制当前题目和选项</button>
                 <button id="test-prev-btn">◀️ “上一题”</button>
                 <button id="test-next-btn">▶️ “下一题”</button>
+                <button id="finish-video-btn">🎬 完成当前视频</button>
             </div>
 
             <p><b>核心功能:</b></p>
@@ -317,6 +318,94 @@
             (err) => log("❌ 复制失败: " + err)
         );
     });
+
+    // --- 完成当前视频 ---
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const waitForMetadata = (video, timeout = 5000) => {
+        return new Promise((resolve, reject) => {
+            if (!video) return reject("未找到视频元素");
+            if (video.readyState >= 1 && Number.isFinite(video.duration) && video.duration > 1) return resolve();
+            const onLoaded = () => {
+                cleanup();
+                resolve();
+            };
+            const onTimeout = setTimeout(() => {
+                cleanup();
+                reject("等待视频元数据超时");
+            }, timeout);
+            const cleanup = () => {
+                clearTimeout(onTimeout);
+                video.removeEventListener('loadedmetadata', onLoaded);
+            };
+            video.addEventListener('loadedmetadata', onLoaded, { once: true });
+        });
+    };
+
+    async function finishCurrentVideo() {
+        try {
+            // 优先按页面结构查找
+            const video = document.querySelector('#dPlayerVideoMain') || document.querySelector('video');
+            if (!video) {
+                log('❌ 未找到视频元素。');
+                return;
+            }
+            log('⏳ 正在尝试完成当前视频...');
+            await waitForMetadata(video).catch(() => {});
+
+            // 若仍无有效时长，尝试触发一次播放以加载元数据（静音以避免打扰）
+            if (!(Number.isFinite(video.duration) && video.duration > 1)) {
+                try {
+                    video.muted = true;
+                    await video.play().catch(() => {});
+                    await waitForMetadata(video).catch(() => {});
+                } catch {}
+            }
+
+            if (!(Number.isFinite(video.duration) && video.duration > 1)) {
+                log('⚠️ 无法读取视频时长，可能为受限的流媒体。尝试强制触发结束事件。');
+            }
+
+            // 尝试将进度跳到末尾附近
+            const target = Number.isFinite(video.duration) && video.duration > 1 ? Math.max(0, video.duration - 0.2) : video.currentTime + 1;
+            try {
+                video.currentTime = target;
+            } catch {}
+
+            // 触发一组与进度相关的事件，便于平台上报
+            const fire = (type) => {
+                try { video.dispatchEvent(new Event(type)); } catch {}
+            };
+            fire('seeking');
+            fire('timeupdate');
+            fire('seeked');
+
+            // 部分平台依赖播放状态才会上报，短暂播放后立即结束
+            try {
+                await video.play().catch(() => {});
+                await wait(120);
+            } catch {}
+
+            // 主动触发结束
+            try {
+                video.pause();
+            } catch {}
+            fire('timeupdate');
+            fire('ended');
+
+            // 再补一次 UI 层按钮的兼容（若存在“重新播放”按钮，说明已到末尾）
+            const replayBtn = Array.from(document.querySelectorAll('.d-loading span'))
+                .find((el) => /重新播放/.test(el.textContent || ''));
+            if (replayBtn) {
+                log('✅ 已到达视频末尾。');
+            } else {
+                log('✅ 已触发完成当前视频。');
+            }
+        } catch (err) {
+            log('❌ 完成视频失败：' + (err && err.toString ? err.toString() : err));
+        }
+    }
+
+    document.getElementById('finish-video-btn').addEventListener('click', finishCurrentVideo);
 
     // --- AI 相关核心功能 ---
     const getAiAnswer = (questionBox) => {
