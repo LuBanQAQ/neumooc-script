@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         NEU MOOC 智能答题助手 (GitHub Release)
+// @name         NEUMOOC 智能助手
 // @namespace    http://tampermonkey.net/
 // @version      1.0
 // @description  功能集大成版。包含AI答题、多选等待、可靠的自动停止机制、SweetAlert2美化弹窗、可拖动/悬浮球最小化面板，并已配置GitHub自动更新。
@@ -18,7 +18,7 @@
 // @connect      *
 // ==/UserScript==
 
-
+    
 (function () {
     "use strict";
 
@@ -66,6 +66,10 @@
         .collapsible-header { cursor: pointer; font-weight: bold; margin-top: 10px; padding-bottom: 5px; border-bottom: 1px solid #ccc; }
         .collapsible-content { display: none; padding-top: 10px; }
         .collapsible-content.visible { display: block; }
+
+    /* 悬浮球样式 */
+    #floating-ball { position: fixed; width: 48px; height: 48px; border-radius: 50%; background-color: #245FE6; color: #fff; display: none; align-items: center; justify-content: center; box-shadow: 0 4px 8px rgba(0,0,0,0.2); z-index: 100001; cursor: move; user-select: none; top: 150px; right: 20px; }
+    #floating-ball span { pointer-events: none; font-size: 18px; }
     `);
 
     // --- 创建 GUI ---
@@ -73,7 +77,7 @@
     panel.id = "control-panel";
     panel.innerHTML = `
         <div id="control-panel-header">
-            <span>🎓 智能答题助手 v0.9.1 (最终版)</span>
+            <span>🎓 智能答题助手 v1.0.1 </span>
             <span id="minimize-btn">—</span>
         </div>
         <div id="control-panel-body">
@@ -91,8 +95,8 @@
             <div class="collapsible-header">🛠️ 辅助工具 (点击展开)</div>
             <div class="collapsible-content">
                 <button id="copy-question-btn" class="btn-info">📋 复制当前题目和选项</button>
-                <button id="test-prev-btn">◀️ 测试“上一题”</button>
-                <button id="test-next-btn">▶️ 测试“下一题”</button>
+                <button id="test-prev-btn">◀️ “上一题”</button>
+                <button id="test-next-btn">▶️ “下一题”</button>
             </div>
 
             <p><b>核心功能:</b></p>
@@ -102,6 +106,12 @@
         </div>
     `;
     document.body.appendChild(panel);
+
+    // 创建悬浮球
+    const floatingBall = document.createElement('div');
+    floatingBall.id = 'floating-ball';
+    floatingBall.innerHTML = '<span>❏</span>';
+    document.body.appendChild(floatingBall);
     document.getElementById("api-key-input").value = GM_getValue("apiKey", "");
     document.getElementById("api-endpoint-input").value = GM_getValue(
         "apiEndpoint",
@@ -140,29 +150,104 @@
     });
 
     let isDragging = false,
+        dragStartTime = 0,
+        hasMoved = false,
         offsetX,
         offsetY;
     const panelHeader = document.getElementById("control-panel-header");
     panelHeader.addEventListener("mousedown", (e) => {
         isDragging = true;
+        hasMoved = false;
+        dragStartTime = Date.now();
         offsetX = e.clientX - panel.offsetLeft;
         offsetY = e.clientY - panel.offsetTop;
         document.body.style.userSelect = "none";
     });
     document.addEventListener("mousemove", (e) => {
         if (isDragging) {
-            panel.style.left = `${e.clientX - offsetX}px`;
-            panel.style.top = `${e.clientY - offsetY}px`;
+            // 记录拖动状态，用于防止松手时触发点击事件
+            hasMoved = true;
+            // 使用 requestAnimationFrame 减少页面抖动
+            requestAnimationFrame(() => {
+                panel.style.left = `${e.clientX - offsetX}px`;
+                panel.style.top = `${e.clientY - offsetY}px`;
+            });
         }
     });
-    document.addEventListener("mouseup", () => {
+    document.addEventListener("mouseup", (e) => {
+        // 检查是否真的进行了拖动且不是简单点击
+        const wasDragging = isDragging && hasMoved;
+        // 检查拖动时间，过滤掉快速点击
+        const dragTime = Date.now() - dragStartTime;
+        
         isDragging = false;
         document.body.style.userSelect = "auto";
+        
+        // 防止拖动结束时误触发最小化按钮的点击事件
+        if (wasDragging && e.target.id === "minimize-btn") {
+            e.preventDefault();
+            e.stopPropagation();
+        }
     });
+    // 为最小化按钮添加单独的点击处理
     document.getElementById("minimize-btn").addEventListener("click", (e) => {
-        e.target.parentElement.nextElementSibling.classList.toggle("minimized");
-        e.target.textContent = e.target.textContent === "—" ? "❏" : "—";
-    });
+            // 点击最小化 => 隐藏面板，显示悬浮球
+            panel.style.display = 'none';
+            const rect = panel.getBoundingClientRect();
+            // 将悬浮球放在当前面板的位置附近
+            floatingBall.style.top = `${Math.max(10, rect.top)}px`;
+            floatingBall.style.left = `${Math.max(10, rect.left)}px`;
+            floatingBall.style.right = 'auto';
+            floatingBall.style.display = 'flex';
+        });
+
+        // 悬浮球拖拽 & 点击恢复
+        let ballDragging = false, ballStartX = 0, ballStartY = 0, ballOffsetX = 0, ballOffsetY = 0, ballMoved = false, ballDownTime = 0;
+        floatingBall.addEventListener('mousedown', (e) => {
+            ballDragging = true;
+            ballMoved = false;
+            ballDownTime = Date.now();
+            const rect = floatingBall.getBoundingClientRect();
+            ballOffsetX = e.clientX - rect.left;
+            ballOffsetY = e.clientY - rect.top;
+            document.body.style.userSelect = 'none';
+        });
+        document.addEventListener('mousemove', (e) => {
+            if (!ballDragging) return;
+            ballMoved = true;
+            requestAnimationFrame(() => {
+                let x = e.clientX - ballOffsetX;
+                let y = e.clientY - ballOffsetY;
+                // 边界限制，避免抖动
+                const maxX = window.innerWidth - floatingBall.offsetWidth - 4;
+                const maxY = window.innerHeight - floatingBall.offsetHeight - 4;
+                x = Math.min(Math.max(4, x), maxX);
+                y = Math.min(Math.max(4, y), maxY);
+                floatingBall.style.left = `${x}px`;
+                floatingBall.style.top = `${y}px`;
+                floatingBall.style.right = 'auto';
+            });
+        });
+        document.addEventListener('mouseup', (e) => {
+            if (!ballDragging) return;
+            const wasDrag = ballDragging && ballMoved;
+            ballDragging = false;
+            document.body.style.userSelect = 'auto';
+            // 如果是拖拽，不触发打开
+            if (wasDrag) {
+                e.preventDefault();
+                e.stopPropagation();
+            } else {
+                // 视为点击：恢复面板
+                floatingBall.style.display = 'none';
+                panel.style.display = 'block';
+                // 将面板移动到悬浮球位置附近
+                const rect = floatingBall.getBoundingClientRect();
+                panel.style.left = `${rect.left}px`;
+                panel.style.top = `${rect.top}px`;
+            }
+        });
+    
 
     // =================================================================
     // 核心修改部分：修正 clickButton 函数
