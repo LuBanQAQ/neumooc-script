@@ -1,7 +1,7 @@
 # NEUMOOC 智能助手
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-1.0.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.0.3-brightgreen.svg)
 ![Language](https://img.shields.io/badge/language-JavaScript-yellow.svg)
 
 一个为东软NEUMOOC平台设计的油猴（Tampermonkey）脚本。
