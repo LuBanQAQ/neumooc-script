@@ -1,4 +1,4 @@
-# NEUMOOC 智能答题助手
+# NEUMOOC 智能助手
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Version](https://img.shields.io/badge/version-1.0.0-brightgreen.svg)
@@ -81,7 +81,7 @@
 您的使用行为即代表您已充分理解并同意，您将**自行承担**使用本软件可能带来的一切风险，包括但不限于上述条款中提到的所有风险。您承诺，不会因使用本软件而对项目作者追究任何形式的法律或经济责任。
 
 #### 6. 最终解释权
-*本声明的最终解释权归宇宙基本法及项目作者所有。*
+*本声明的最终解释权归目作者所有。*
 
 ## 📄 开源协议
 
