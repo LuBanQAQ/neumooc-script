@@ -52,7 +52,7 @@
     // --- GUI 样式 ---
     GM_addStyle(`
         #control-panel { position: fixed; top: 150px; right: 20px; width: 320px; background-color: #f1f1f1; border: 1px solid #d3d3d3; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); z-index: 100000; font-family: Arial, sans-serif; color: #333; }
-        #control-panel-header { padding: 10px; cursor: move; background-color: #245FE6; color: white; border-top-left-radius: 8px; border-top-right-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+        #control-panel-header { padding: 10px; cursor: move; background-color: #245FE6; color: white; border-top-left-radius: 8px; border-top-right-radius: 8px; display: flex; justify-content: flex-start; align-items: center; gap: 10px; }
         #control-panel-body { padding: 15px; display: block; max-height: 70vh; overflow-y: auto; }
         #control-panel-body.minimized { display: none; }
         #control-panel button { display: block; width: 100%; padding: 8px 12px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; background-color: #fff; cursor: pointer; text-align: left; font-size: 13px; }
@@ -62,13 +62,14 @@
         #control-panel .btn-info { background-color: #17a2b8; color: white; border-color: #17a2b8; }
         #control-panel input[type="text"] { width: 100%; padding: 6px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
         #log-area { margin-top: 10px; padding: 8px; height: 120px; overflow-y: auto; background-color: #fff; border: 1px solid #ddd; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
-        #minimize-btn { cursor: pointer; font-weight: bold; font-size: 18px; }
+        #minimize-btn { cursor: pointer; font-weight: bold; font-size: 18px; padding: 2px 6px; border-radius: 3px; background-color: transparent; transition: background-color 0.2s; }
+        #minimize-btn:hover { background-color: rgba(255,255,255,0.2); }
         .collapsible-header { cursor: pointer; font-weight: bold; margin-top: 10px; padding-bottom: 5px; border-bottom: 1px solid #ccc; }
         .collapsible-content { display: none; padding-top: 10px; }
         .collapsible-content.visible { display: block; }
 
     /* 悬浮球样式 */
-    #floating-ball { position: fixed; width: 48px; height: 48px; border-radius: 50%; background-color: #245FE6; color: #fff; display: none; align-items: center; justify-content: center; box-shadow: 0 4px 8px rgba(0,0,0,0.2); z-index: 100001; cursor: move; user-select: none; top: 150px; right: 20px; }
+    #floating-ball { position: fixed; width: 48px; height: 48px; border-radius: 50%; background-color: #245FE6; color: #fff; display: none; align-items: center; justify-content: center; box-shadow: 0 4px 8px rgba(0,0,0,0.2); z-index: 100001; cursor: move; user-select: none; }
     #floating-ball span { pointer-events: none; font-size: 18px; }
     `);
 
@@ -77,8 +78,8 @@
     panel.id = "control-panel";
     panel.innerHTML = `
         <div id="control-panel-header">
-            <span>🎓 智能助手 v1.0.2 </span>
             <span id="minimize-btn">—</span>
+            <span>🎓 智能助手 v1.0.2 </span>
         </div>
         <div id="control-panel-body">
             <div class="collapsible-header">⚙️ AI 配置 (点击展开)</div>
@@ -193,11 +194,15 @@
     // 为最小化按钮添加单独的点击处理
     document.getElementById("minimize-btn").addEventListener("click", (e) => {
             // 点击最小化 => 隐藏面板，显示悬浮球
-            panel.style.display = 'none';
             const rect = panel.getBoundingClientRect();
-            // 将悬浮球放在当前面板的位置附近
-            floatingBall.style.top = `${Math.max(10, rect.top)}px`;
-            floatingBall.style.left = `${Math.max(10, rect.left)}px`;
+            panel.style.display = 'none';
+            
+            // 将悬浮球放在当前面板的位置附近，确保在可视区域内
+            const ballTop = Math.max(10, Math.min(rect.top, window.innerHeight - 58));
+            const ballLeft = Math.max(10, Math.min(rect.left, window.innerWidth - 58));
+            
+            floatingBall.style.top = `${ballTop}px`;
+            floatingBall.style.left = `${ballLeft}px`;
             floatingBall.style.right = 'auto';
             floatingBall.style.display = 'flex';
         });
@@ -240,12 +245,38 @@
                 e.stopPropagation();
             } else {
                 // 视为点击：恢复面板
+                const rect = floatingBall.getBoundingClientRect();
                 floatingBall.style.display = 'none';
                 panel.style.display = 'block';
-                // 将面板移动到悬浮球位置附近
-                const rect = floatingBall.getBoundingClientRect();
-                panel.style.left = `${rect.left}px`;
-                panel.style.top = `${rect.top}px`;
+                
+                // 将面板移动到悬浮球位置附近，确保面板完全在可视区域内
+                const panelWidth = 320; // 面板宽度
+                const panelHeight = Math.min(panel.offsetHeight || 400, window.innerHeight * 0.8); // 面板高度，最大不超过屏幕80%
+                
+                // 计算面板位置，确保不超出屏幕边界
+                let panelLeft = rect.left;
+                let panelTop = rect.top;
+                
+                // 右边界检查
+                if (panelLeft + panelWidth > window.innerWidth - 20) {
+                    panelLeft = window.innerWidth - panelWidth - 20;
+                }
+                // 左边界检查
+                if (panelLeft < 20) {
+                    panelLeft = 20;
+                }
+                // 下边界检查
+                if (panelTop + panelHeight > window.innerHeight - 20) {
+                    panelTop = window.innerHeight - panelHeight - 20;
+                }
+                // 上边界检查
+                if (panelTop < 20) {
+                    panelTop = 20;
+                }
+                
+                panel.style.left = `${panelLeft}px`;
+                panel.style.top = `${panelTop}px`;
+                panel.style.right = 'auto'; // 确保不使用right定位
             }
         });
     
