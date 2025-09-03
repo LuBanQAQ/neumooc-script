@@ -28,23 +28,6 @@
 3.  将项目中的 `.js` 文件的**全部内容**复制并粘贴到编辑器中。
 4.  按下 `Ctrl` + `S` 保存脚本。
 
-### 3. 配置 AI 参数
-
-脚本需要一个遵循 OpenAI API 格式的接口才能工作。
-
-1.  打开任意 NEU MOOC 测验页面，脚本的控制面板会出现在页面右侧。
-2.  在 **AI 配置**区域，填入您的：
-    - `API Key`
-    - `API Endpoint` (可选, 默认为 OpenAI 官方地址)
-    - `Model` (可选, 默认为 `gpt-3.5-turbo`)
-3.  点击 **保存配置** 按钮。配置成功后会有提示。
-
-推荐[阿里云百炼大模型](https://dashi.aliyun.com/activity/mobi?userCode=jgg8c9cg) 新用户注册免费领取Deepseek-R1 额度
-[API参考](https://help.aliyun.com/zh/model-studio/use-qwen-by-calling-api?spm=a2c4g.11186623.help-menu-2400256.d_2_1_0.21ce7297Q8XdZJ&scm=20140722.H_2712576._.OR_help-T_cn~zh-V_1)
-
-## 📖 使用方法
-
-
 
 ## ⚠️ 免责声明
 
