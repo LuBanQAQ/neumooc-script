@@ -1,643 +1,826 @@
 // ==UserScript==
 // @name         NEUMOOC 智能助手
 // @namespace    http://tampermonkey.net/
-// @version      1.0.2
-// @description  NEUMOOC 智能助手 包含各种功能
+// @version      2.0.0
+// @description  NEUMOOC 智能助手：导出题目JSON并根据答案JSON自动填充
 // @author       LuBanQAQ
 // @license      MIT
 // @match        https://neustudydl.neumooc.com/*
-// @downloadURL  https://raw.githubusercontent.com/LuBanQAQ/neumooc-script/main/neumooc-script.user.js
-// @updateURL    https://raw.githubusercontent.com/LuBanQAQ/neumooc-script/main/neumooc-script.user.js
+// @downloadURL  https://github.com/renyancheng/neumooc-script/raw/refs/heads/main/neumooc-script.user.js
+// @updateURL    https://github.com/renyancheng/neumooc-script/raw/refs/heads/main/neumooc-script.user.js
 // @grant        GM_addStyle
-// @grant        GM_xmlhttpRequest
-// @grant        GM_setValue
-// @grant        GM_getValue
-// @grant        GM_getResourceText
-// @require      https://cdn.jsdelivr.net/npm/sweetalert2@11
-// @resource     sweetalert2_css https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css
-// @connect      *
 // ==/UserScript==
 
-    
 (function () {
-    "use strict";
+	"use strict";
 
-    // --- 配置区 ---
-    const selectors = {
-        questionBox: ".item-box",
-        questionText: ".qusetion-info > .info-item > .value",
-        optionLabel: ".choices > label.el-radio, .choices > label.el-checkbox",
-        optionText:
-            ".el-radio__label .choices-html, .el-checkbox__label .choices-html",
-        prevButton: ".left-bottom button:first-of-type",
-        nextButton: ".left-bottom button:last-of-type",
-        submitButton: ".infoCellRight .el-button--primary",
-        examContainer: ".respondPaperContainer",
-        answerCardNumbers: ".right-box .q-num-box",
-        activeAnswerCardNumber: ".right-box .q-num-box.is-q-active",
-    };
+	const selectors = {
+		questionBox: ".item-box",
+		questionText: ".qusetion-info > .info-item > .value",
+		optionLabel: ".choices > label.el-radio, .choices > label.el-checkbox",
+		optionText:
+			".el-radio__label .choices-html, .el-checkbox__label .choices-html",
+		optionInput: "input[type='radio'], input[type='checkbox']",
+	};
 
-    // --- AI 配置 ---
-    let aiConfig = {
-        apiKey: GM_getValue("apiKey", ""),
-        apiEndpoint: GM_getValue(
-            "apiEndpoint",
-            "https://api.openai.com/v1/chat/completions"
-        ),
-        model: GM_getValue("model", "gpt-3.5-turbo"),
-    };
-
-    let isAutoAnswering = false;
-
-    // --- GUI 样式 ---
-    GM_addStyle(`
-        #control-panel { position: fixed; top: 150px; right: 20px; width: 320px; background-color: #f1f1f1; border: 1px solid #d3d3d3; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); z-index: 100000; font-family: Arial, sans-serif; color: #333; }
-        #control-panel-header { padding: 10px; cursor: move; background-color: #245FE6; color: white; border-top-left-radius: 8px; border-top-right-radius: 8px; display: flex; justify-content: flex-start; align-items: center; gap: 10px; }
-        #control-panel-body { padding: 15px; display: block; max-height: 70vh; overflow-y: auto; }
-        #control-panel-body.minimized { display: none; }
-        #control-panel button { display: block; width: 100%; padding: 8px 12px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; background-color: #fff; cursor: pointer; text-align: left; font-size: 13px; }
-        #control-panel button:hover { background-color: #e9e9e9; }
-        #control-panel .btn-primary { background-color: #245FE6; color: white; border-color: #245FE6; }
-        #control-panel .btn-danger { background-color: #dc3545; color: white; border-color: #dc3545; }
-        #control-panel .btn-info { background-color: #17a2b8; color: white; border-color: #17a2b8; }
-        #control-panel input[type="text"] { width: 100%; padding: 6px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        #log-area { margin-top: 10px; padding: 8px; height: 120px; overflow-y: auto; background-color: #fff; border: 1px solid #ddd; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
-        #minimize-btn { cursor: pointer; font-weight: bold; font-size: 18px; padding: 2px 6px; border-radius: 3px; background-color: transparent; transition: background-color 0.2s; }
-        #minimize-btn:hover { background-color: rgba(255,255,255,0.2); }
-        .collapsible-header { cursor: pointer; font-weight: bold; margin-top: 10px; padding-bottom: 5px; border-bottom: 1px solid #ccc; }
-        .collapsible-content { display: none; padding-top: 10px; }
-        .collapsible-content.visible { display: block; }
-
-    /* 悬浮球样式 */
-    #floating-ball { position: fixed; width: 48px; height: 48px; border-radius: 50%; background-color: #245FE6; color: #fff; display: none; align-items: center; justify-content: center; box-shadow: 0 4px 8px rgba(0,0,0,0.2); z-index: 100001; cursor: move; user-select: none; }
-    #floating-ball span { pointer-events: none; font-size: 18px; }
+	GM_addStyle(`
+        #neumooc-helper-panel { position: fixed; top: 120px; right: 24px; width: 320px; background: #f7f8fa; border: 1px solid #c9d2f0; border-radius: 10px; box-shadow: 0 8px 20px rgba(36, 95, 230, 0.18); font-family: Arial, sans-serif; color: #1f2a44; z-index: 100000; }
+    #neumooc-helper-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: linear-gradient(135deg, #245fe6, #5d8bf7); color: #fff; border-top-left-radius: 10px; border-top-right-radius: 10px; font-size: 14px; font-weight: 600; cursor: move; }
+        #neumooc-helper-toggle { border: none; background: rgba(255,255,255,0.22); color: #fff; width: 20px; height: 20px; border-radius: 50%; cursor: pointer; font-size: 14px; line-height: 20px; text-align: center; }
+        #neumooc-helper-toggle:hover { background: rgba(255,255,255,0.35); }
+        #neumooc-helper-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+        #neumooc-helper-panel.minimized #neumooc-helper-body { display: none; }
+    #neumooc-helper-panel.minimized { width: 48px; height: 48px; border-radius: 50%; padding: 0; }
+    #neumooc-helper-panel.minimized #neumooc-helper-header { padding: 0; height: 100%; width: 100%; border-radius: 50%; justify-content: center; }
+    #neumooc-helper-panel.minimized #neumooc-helper-title { display: none; }
+	#neumooc-helper-panel.minimized #neumooc-helper-toggle { width: 100%; height: 100%; border-radius: 50%; background: #245fe6; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; line-height: 1; padding: 0; }
+        #neumooc-helper-panel button.action-btn { padding: 10px; border: none; border-radius: 6px; background: #245fe6; color: #fff; cursor: pointer; font-size: 13px; font-weight: 500; text-align: center; }
+        #neumooc-helper-panel button.action-btn:hover { background: #1c4cd1; }
+        #answer-json-input { min-height: 100px; resize: vertical; border: 1px solid #bac7f4; border-radius: 6px; padding: 8px; font-size: 12px; font-family: Consolas, "Courier New", monospace; }
+        #neumooc-helper-log { max-height: 140px; overflow-y: auto; background: #fff; border: 1px solid #e0e6fb; border-radius: 6px; padding: 8px; font-size: 12px; line-height: 1.4; }
+        #neumooc-helper-log div { margin-bottom: 4px; }
     `);
 
-    // --- 创建 GUI ---
-    const panel = document.createElement("div");
-    panel.id = "control-panel";
-    panel.innerHTML = `
-        <div id="control-panel-header">
-            <span id="minimize-btn">—</span>
-            <span>🎓 智能助手 v1.0.2 </span>
+	const panel = document.createElement("div");
+	panel.id = "neumooc-helper-panel";
+	panel.innerHTML = `
+        <div id="neumooc-helper-header">
+            <span id="neumooc-helper-title">📘 题目助手 v2.0.0</span>
+			<button id="neumooc-helper-toggle" type="button">–</button>
         </div>
-        <div id="control-panel-body">
-            <div class="collapsible-header">⚙️ AI 配置 (点击展开)</div>
-            <div class="collapsible-content">
-                <label>API Key:</label>
-                <input type="text" id="api-key-input" placeholder="输入你的 API Key">
-                <label>API Endpoint:</label>
-                <input type="text" id="api-endpoint-input">
-                <label>Model:</label>
-                <input type="text" id="model-input">
-                <button id="save-config-btn">保存配置</button>
-            </div>
-
-            <div class="collapsible-header">🛠️ 辅助工具 (点击展开)</div>
-            <div class="collapsible-content">
-                <button id="copy-question-btn" class="btn-info">📋 复制当前题目和选项</button>
-                <button id="test-prev-btn">◀️ “上一题”</button>
-                <button id="test-next-btn">▶️ “下一题”</button>
-                <button id="finish-video-btn">🎬 完成当前视频</button>
-            </div>
-
-            <p><b>核心功能:</b></p>
-            <button id="ai-single-solve-btn">🤖 AI 解答当前题目</button>
-            <button id="full-auto-btn" class="btn-primary">⚡️ 开始全自动 AI 答题</button>
-            <div id="log-area">等待操作...</div>
+        <div id="neumooc-helper-body">
+            <button id="copy-questions-btn" class="action-btn" type="button">复制题目 JSON</button>
+            <textarea id="answer-json-input" placeholder="在此粘贴 AI 返回的答案 JSON" spellcheck="false"></textarea>
+            <button id="fill-answers-btn" class="action-btn" type="button">根据 JSON 填充答案</button>
+            <div id="neumooc-helper-log"><div>${timestamp()}: 等待操作...</div></div>
         </div>
     `;
-    document.body.appendChild(panel);
+	document.body.appendChild(panel);
 
-    // 创建悬浮球
-    const floatingBall = document.createElement('div');
-    floatingBall.id = 'floating-ball';
-    floatingBall.innerHTML = '<span>❏</span>';
-    document.body.appendChild(floatingBall);
-    document.getElementById("api-key-input").value = GM_getValue("apiKey", "");
-    document.getElementById("api-endpoint-input").value = GM_getValue(
-        "apiEndpoint",
-        "https://api.openai.com/v1/chat/completions"
-    );
-    document.getElementById("model-input").value = GM_getValue(
-        "model",
-        "gpt-3.5-turbo"
-    );
+	const toggleBtn = document.getElementById("neumooc-helper-toggle");
+	const header = document.getElementById("neumooc-helper-header");
 
-    const log = (message) => {
-        const logArea = document.getElementById("log-area");
-        if (logArea) {
-            logArea.innerHTML += `<div>${new Date().toLocaleTimeString()}: ${message}</div>`;
-            logArea.scrollTop = logArea.scrollHeight;
-        }
-    };
+	let isDragging = false;
+	let dragDidMove = false;
+	let dragOffsetX = 0;
+	let dragOffsetY = 0;
 
-    // --- GUI 事件绑定 ---
-    document.querySelectorAll(".collapsible-header").forEach((header) => {
-        header.addEventListener("click", () =>
-            header.nextElementSibling.classList.toggle("visible")
-        );
-    });
+	const beginDrag = (event) => {
+		if (event.button !== 0) return;
+		event.preventDefault();
+		isDragging = true;
+		dragDidMove = false;
+		const rect = panel.getBoundingClientRect();
+		dragOffsetX = event.clientX - rect.left;
+		dragOffsetY = event.clientY - rect.top;
+		panel.style.left = `${rect.left}px`;
+		panel.style.top = `${rect.top}px`;
+		panel.style.right = "auto";
+		panel.style.bottom = "auto";
+		document.body.style.userSelect = "none";
+	};
 
-    document.getElementById("save-config-btn").addEventListener("click", () => {
-        aiConfig.apiKey = document.getElementById("api-key-input").value.trim();
-        aiConfig.apiEndpoint = document
-            .getElementById("api-endpoint-input")
-            .value.trim();
-        aiConfig.model = document.getElementById("model-input").value.trim();
-        GM_setValue("apiKey", aiConfig.apiKey);
-        GM_setValue("apiEndpoint", aiConfig.apiEndpoint);
-        GM_setValue("model", aiConfig.model);
-        log("✅ AI配置已保存。");
-    });
+	header.addEventListener("mousedown", (event) => {
+		beginDrag(event);
+	});
 
-    let isDragging = false,
-        dragStartTime = 0,
-        hasMoved = false,
-        offsetX,
-        offsetY;
-    const panelHeader = document.getElementById("control-panel-header");
-    panelHeader.addEventListener("mousedown", (e) => {
-        isDragging = true;
-        hasMoved = false;
-        dragStartTime = Date.now();
-        offsetX = e.clientX - panel.offsetLeft;
-        offsetY = e.clientY - panel.offsetTop;
-        document.body.style.userSelect = "none";
-    });
-    document.addEventListener("mousemove", (e) => {
-        if (isDragging) {
-            // 记录拖动状态，用于防止松手时触发点击事件
-            hasMoved = true;
-            // 使用 requestAnimationFrame 减少页面抖动
-            requestAnimationFrame(() => {
-                panel.style.left = `${e.clientX - offsetX}px`;
-                panel.style.top = `${e.clientY - offsetY}px`;
-            });
-        }
-    });
-    document.addEventListener("mouseup", (e) => {
-        // 检查是否真的进行了拖动且不是简单点击
-        const wasDragging = isDragging && hasMoved;
-        // 检查拖动时间，过滤掉快速点击
-        const dragTime = Date.now() - dragStartTime;
-        
-        isDragging = false;
-        document.body.style.userSelect = "auto";
-        
-        // 防止拖动结束时误触发最小化按钮的点击事件
-        if (wasDragging && e.target.id === "minimize-btn") {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-    });
-    // 为最小化按钮添加单独的点击处理
-    document.getElementById("minimize-btn").addEventListener("click", (e) => {
-            // 点击最小化 => 隐藏面板，显示悬浮球
-            const rect = panel.getBoundingClientRect();
-            panel.style.display = 'none';
-            
-            // 将悬浮球放在当前面板的位置附近，确保在可视区域内
-            const ballTop = Math.max(10, Math.min(rect.top, window.innerHeight - 58));
-            const ballLeft = Math.max(10, Math.min(rect.left, window.innerWidth - 58));
-            
-            floatingBall.style.top = `${ballTop}px`;
-            floatingBall.style.left = `${ballLeft}px`;
-            floatingBall.style.right = 'auto';
-            floatingBall.style.display = 'flex';
-        });
+	document.addEventListener("mousemove", (event) => {
+		if (!isDragging) return;
+		dragDidMove = true;
+		const panelWidth = panel.offsetWidth;
+		const panelHeight = panel.offsetHeight;
+		const maxLeft = window.innerWidth - panelWidth - 8;
+		const maxTop = window.innerHeight - panelHeight - 8;
+		const nextLeft = Math.max(
+			8,
+			Math.min(event.clientX - dragOffsetX, maxLeft)
+		);
+		const nextTop = Math.max(
+			8,
+			Math.min(event.clientY - dragOffsetY, maxTop)
+		);
+		panel.style.left = `${nextLeft}px`;
+		panel.style.top = `${nextTop}px`;
+	});
 
-        // 悬浮球拖拽 & 点击恢复
-        let ballDragging = false, ballStartX = 0, ballStartY = 0, ballOffsetX = 0, ballOffsetY = 0, ballMoved = false, ballDownTime = 0;
-        floatingBall.addEventListener('mousedown', (e) => {
-            ballDragging = true;
-            ballMoved = false;
-            ballDownTime = Date.now();
-            const rect = floatingBall.getBoundingClientRect();
-            ballOffsetX = e.clientX - rect.left;
-            ballOffsetY = e.clientY - rect.top;
-            document.body.style.userSelect = 'none';
-        });
-        document.addEventListener('mousemove', (e) => {
-            if (!ballDragging) return;
-            ballMoved = true;
-            requestAnimationFrame(() => {
-                let x = e.clientX - ballOffsetX;
-                let y = e.clientY - ballOffsetY;
-                // 边界限制，避免抖动
-                const maxX = window.innerWidth - floatingBall.offsetWidth - 4;
-                const maxY = window.innerHeight - floatingBall.offsetHeight - 4;
-                x = Math.min(Math.max(4, x), maxX);
-                y = Math.min(Math.max(4, y), maxY);
-                floatingBall.style.left = `${x}px`;
-                floatingBall.style.top = `${y}px`;
-                floatingBall.style.right = 'auto';
-            });
-        });
-        document.addEventListener('mouseup', (e) => {
-            if (!ballDragging) return;
-            const wasDrag = ballDragging && ballMoved;
-            ballDragging = false;
-            document.body.style.userSelect = 'auto';
-            // 如果是拖拽，不触发打开
-            if (wasDrag) {
-                e.preventDefault();
-                e.stopPropagation();
-            } else {
-                // 视为点击：恢复面板
-                const rect = floatingBall.getBoundingClientRect();
-                floatingBall.style.display = 'none';
-                panel.style.display = 'block';
-                
-                // 将面板移动到悬浮球位置附近，确保面板完全在可视区域内
-                const panelWidth = 320; // 面板宽度
-                const panelHeight = Math.min(panel.offsetHeight || 400, window.innerHeight * 0.8); // 面板高度，最大不超过屏幕80%
-                
-                // 计算面板位置，确保不超出屏幕边界
-                let panelLeft = rect.left;
-                let panelTop = rect.top;
-                
-                // 右边界检查
-                if (panelLeft + panelWidth > window.innerWidth - 20) {
-                    panelLeft = window.innerWidth - panelWidth - 20;
-                }
-                // 左边界检查
-                if (panelLeft < 20) {
-                    panelLeft = 20;
-                }
-                // 下边界检查
-                if (panelTop + panelHeight > window.innerHeight - 20) {
-                    panelTop = window.innerHeight - panelHeight - 20;
-                }
-                // 上边界检查
-                if (panelTop < 20) {
-                    panelTop = 20;
-                }
-                
-                panel.style.left = `${panelLeft}px`;
-                panel.style.top = `${panelTop}px`;
-                panel.style.right = 'auto'; // 确保不使用right定位
-            }
-        });
-    
+	document.addEventListener("mouseup", () => {
+		if (!isDragging) return;
+		isDragging = false;
+		document.body.style.userSelect = "";
+		const moved = dragDidMove;
+		dragDidMove = false;
+		if (moved) {
+			toggleBtn.dataset.skipClick = "1";
+		}
+	});
 
-    // =================================================================
-    // 核心修改部分：修正 clickButton 函数
-    // =================================================================
-    const clickButton = (selector, logMsg, errorMsg) => {
-        const button = document.querySelector(selector);
-        // 增加检查：按钮必须存在、未被禁用，并且样式上是可见的
-        if (
-            button &&
-            !button.disabled &&
-            window.getComputedStyle(button).display !== "none"
-        ) {
-            button.click();
-            log(logMsg);
-            return true;
-        }
-        log(errorMsg);
-        return false;
-    };
+	toggleBtn.addEventListener("click", (event) => {
+		if (toggleBtn.dataset.skipClick === "1") {
+			event.preventDefault();
+			event.stopPropagation();
+			delete toggleBtn.dataset.skipClick;
+			return;
+		}
+		panel.classList.toggle("minimized");
+		toggleBtn.textContent = panel.classList.contains("minimized")
+			? "☰"
+			: "–";
+	});
 
-    document
-        .getElementById("test-prev-btn")
-        .addEventListener("click", () =>
-            clickButton(
-                selectors.prevButton,
-                "点击了“上一题”。",
-                "未找到“上一题”按钮。"
-            )
-        );
-    document
-        .getElementById("test-next-btn")
-        .addEventListener("click", () =>
-            clickButton(
-                selectors.nextButton,
-                "点击了“下一题”。",
-                "未找到“下一题”按钮。"
-            )
-        );
+	const log = (message) => {
+		const logArea = document.getElementById("neumooc-helper-log");
+		if (!logArea) return;
+		const entry = document.createElement("div");
+		entry.textContent = `${timestamp()}: ${message}`;
+		logArea.appendChild(entry);
+		while (logArea.children.length > 80) {
+			logArea.removeChild(logArea.firstChild);
+		}
+		logArea.scrollTop = logArea.scrollHeight;
+	};
 
-    document.getElementById("copy-question-btn").addEventListener("click", () => {
-        const questionBox = document.querySelector(
-            `${selectors.questionBox}:not([style*="display: none"])`
-        );
-        if (!questionBox) {
-            log("❌ 未找到题目。");
-            return;
-        }
-        const questionTitleElement = questionBox.querySelector(
-            selectors.questionText
-        );
-        if (!questionTitleElement) {
-            log("❌ 未找到题目正文。");
-            return;
-        }
-        const questionText = questionTitleElement.innerText.trim();
-        const options = Array.from(
-            questionBox.querySelectorAll(selectors.optionLabel)
-        );
-        let formattedString = `【题目】\n${questionText}\n\n【选项】\n`;
-        options.forEach((opt, i) => {
-            const letter = String.fromCharCode(65 + i);
-            const text = opt.querySelector(selectors.optionText)?.innerText.trim();
-            formattedString += `${letter}. ${text}\n`;
-        });
-        navigator.clipboard.writeText(formattedString).then(
-            () => log("✅ 当前题目已复制到剪贴板！"),
-            (err) => log("❌ 复制失败: " + err)
-        );
-    });
+	document
+		.getElementById("copy-questions-btn")
+		.addEventListener("click", () => {
+			const snapshot = collectQuestions({ includeDom: false });
+			if (snapshot.length === 0) {
+				log("未找到任何题目，请确保题目已经加载。");
+				return;
+			}
+			const exportPayload = {
+				generatedAt: new Date().toISOString(),
+				questionCount: snapshot.length,
+				questions: snapshot,
+			};
+			const prettyJson = JSON.stringify(exportPayload, null, 2);
+			const prompt = buildAiPrompt(snapshot.length);
+			const combined = `${prompt}\n\n${prettyJson}`;
+			copyToClipboard(combined)
+				.then(() =>
+					log(
+						`已复制 ${snapshot.length} 道题目及 AI prompt 到剪贴板。`
+					)
+				)
+				.catch((err) => {
+					console.error(err);
+					log("复制失败，请手动复制面板中的 prompt+JSON。");
+					showTextInTextarea(combined);
+				});
+		});
 
-    // --- 完成当前视频 ---
-    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-    const waitForMetadata = (video, timeout = 5000) => {
-        return new Promise((resolve, reject) => {
-            if (!video) return reject("未找到视频元素");
-            if (video.readyState >= 1 && Number.isFinite(video.duration) && video.duration > 1) return resolve();
-            const onLoaded = () => {
-                cleanup();
-                resolve();
-            };
-            const onTimeout = setTimeout(() => {
-                cleanup();
-                reject("等待视频元数据超时");
-            }, timeout);
-            const cleanup = () => {
-                clearTimeout(onTimeout);
-                video.removeEventListener('loadedmetadata', onLoaded);
-            };
-            video.addEventListener('loadedmetadata', onLoaded, { once: true });
-        });
-    };
+	document
+		.getElementById("fill-answers-btn")
+		.addEventListener("click", () => {
+			const textarea = document.getElementById("answer-json-input");
+			const raw = textarea.value.trim();
+			if (!raw) {
+				log("请先粘贴答案 JSON。");
+				return;
+			}
+			let parsed;
+			try {
+				parsed = JSON.parse(raw);
+			} catch (error) {
+				log("JSON 解析失败: " + error.message);
+				return;
+			}
 
-    async function finishCurrentVideo() {
-        try {
-            // 优先按页面结构查找
-            const video = document.querySelector('#dPlayerVideoMain') || document.querySelector('video');
-            if (!video) {
-                log('❌ 未找到视频元素。');
-                return;
-            }
-            log('⏳ 正在尝试完成当前视频...');
-            await waitForMetadata(video).catch(() => {});
+			const preparedEntries = normalizeAnswerPayload(parsed);
+			if (preparedEntries.length === 0) {
+				log("未找到有效答案条目，请检查 JSON 格式。");
+				return;
+			}
 
-            // 若仍无有效时长，尝试触发一次播放以加载元数据（静音以避免打扰）
-            if (!(Number.isFinite(video.duration) && video.duration > 1)) {
-                try {
-                    video.muted = true;
-                    await video.play().catch(() => {});
-                    await waitForMetadata(video).catch(() => {});
-                } catch {}
-            }
+			const questionSnapshot = collectQuestions({ includeDom: true });
+			if (questionSnapshot.length === 0) {
+				log("题目列表为空，无法填充答案。");
+				return;
+			}
 
-            if (!(Number.isFinite(video.duration) && video.duration > 1)) {
-                log('⚠️ 无法读取视频时长，可能为受限的流媒体。尝试强制触发结束事件。');
-            }
+			let matchedQuestions = 0;
+			let totalSelections = 0;
 
-            // 尝试将进度跳到末尾附近
-            const target = Number.isFinite(video.duration) && video.duration > 1 ? Math.max(0, video.duration - 0.2) : video.currentTime + 1;
-            try {
-                video.currentTime = target;
-            } catch {}
+			for (const entry of preparedEntries) {
+				const prepared = prepareAnswerEntry(entry);
+				if (!prepared) {
+					log("跳过无法解析的答案项: " + safeStringify(entry));
+					continue;
+				}
+				if (prepared.choices.length === 0) {
+					log("答案项缺少 choices: " + safeStringify(entry));
+					continue;
+				}
 
-            // 触发一组与进度相关的事件，便于平台上报
-            const fire = (type) => {
-                try { video.dispatchEvent(new Event(type)); } catch {}
-            };
-            fire('seeking');
-            fire('timeupdate');
-            fire('seeked');
+				const targetQuestion = findMatchingQuestion(
+					prepared,
+					questionSnapshot
+				);
+				if (!targetQuestion) {
+					log(`未匹配到题目: ${describeAnswerTarget(prepared)}。`);
+					continue;
+				}
 
-            // 部分平台依赖播放状态才会上报，短暂播放后立即结束
-            try {
-                await video.play().catch(() => {});
-                await wait(120);
-            } catch {}
+				const matches = selectOptionsForQuestion(
+					targetQuestion,
+					prepared.choices
+				);
+				matchedQuestions += matches > 0 ? 1 : 0;
+				totalSelections += matches;
 
-            // 主动触发结束
-            try {
-                video.pause();
-            } catch {}
-            fire('timeupdate');
-            fire('ended');
+				log(
+					`题目 ${
+						targetQuestion.numberLabel || targetQuestion.index
+					} 选中 ${matches}/${prepared.choices.length} 个选项。`
+				);
+			}
 
-            // 再补一次 UI 层按钮的兼容（若存在“重新播放”按钮，说明已到末尾）
-            const replayBtn = Array.from(document.querySelectorAll('.d-loading span'))
-                .find((el) => /重新播放/.test(el.textContent || ''));
-            if (replayBtn) {
-                log('✅ 已到达视频末尾。');
-            } else {
-                log('✅ 已触发完成当前视频。');
-            }
-        } catch (err) {
-            log('❌ 完成视频失败：' + (err && err.toString ? err.toString() : err));
-        }
-    }
+			if (totalSelections === 0) {
+				log("未成功填充任何选项，请确认题目匹配和选项标识是否一致。");
+			} else {
+				log(
+					`填充完成，共匹配 ${matchedQuestions} 道题，选择 ${totalSelections} 个选项。`
+				);
+			}
+		});
 
-    document.getElementById('finish-video-btn').addEventListener('click', finishCurrentVideo);
+	function collectQuestions(options = {}) {
+		const { includeDom = false } = options;
+		const boxes = Array.from(
+			document.querySelectorAll(selectors.questionBox)
+		);
+		const questions = [];
 
-    // --- AI 相关核心功能 ---
-    const getAiAnswer = (questionBox) => {
-        return new Promise((resolve, reject) => {
-            aiConfig.apiKey = GM_getValue("apiKey", "");
-            if (!aiConfig.apiKey) {
-                log("❌ 错误：请先配置API Key。");
-                return reject("API Key not set");
-            }
-            const questionTitleElement = questionBox.querySelector(
-                selectors.questionText
-            );
-            if (!questionTitleElement) return reject("无法解析题目正文。");
-            const questionText = questionTitleElement.innerText.trim();
-            const options = Array.from(
-                questionBox.querySelectorAll(selectors.optionLabel)
-            );
-            const isMultiple =
-                questionBox.querySelector(".el-checkbox-group") !== null;
-            if (options.length === 0) return reject("无法解析选项。");
-            let prompt = `你是一个严谨的答题助手。请根据以下题目和选项，找出最准确的答案。\n\n题目：${questionText}\n\n选项：\n`;
-            const optionMap = {};
-            options.forEach((opt, i) => {
-                const letter = String.fromCharCode(65 + i);
-                const text = opt.querySelector(selectors.optionText)?.innerText.trim();
-                prompt += `${letter}. ${text}\n`;
-                optionMap[letter] = text;
-            });
-            if (isMultiple) {
-                prompt += `\n注意：这是一个多选题，可能有一个或多个正确答案。请给出所有正确答案的字母，仅用逗号分隔（例如: A,B）。请只返回字母和逗号。`;
-            } else {
-                prompt += `\n注意：这是一个单选题。请只返回唯一正确答案的字母（例如: A）。`;
-            }
-            log(`💬 正在为题目 "${questionText.slice(0, 15)}..." 请求AI...`);
-            GM_xmlhttpRequest({
-                method: "POST",
-                url: aiConfig.apiEndpoint,
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${aiConfig.apiKey}`,
-                },
-                data: JSON.stringify({
-                    model: aiConfig.model,
-                    messages: [{ role: "user", content: prompt }],
-                    temperature: 0,
-                }),
-                onload: (res) => {
-                    try {
-                        const data = JSON.parse(res.responseText);
-                        const aiAnswerRaw = data.choices[0].message.content;
-                        log(`🤖 AI 返回: ${aiAnswerRaw}`);
-                        const letters = aiAnswerRaw
-                            .replace(/[^A-Z,]/g, "")
-                            .split(",")
-                            .filter(Boolean);
-                        const answersText = letters
-                            .map((l) => optionMap[l])
-                            .filter(Boolean);
-                        resolve(answersText);
-                    } catch (e) {
-                        reject("AI响应解析失败: " + e.message);
-                    }
-                },
-                onerror: (res) => reject("AI请求失败: " + res.statusText),
-            });
-        });
-    };
+		boxes.forEach((box, index) => {
+			const questionIndex = index + 1;
+			const questionTextElement = findQuestionTextElement(box);
+			const questionText = cleanText(
+				questionTextElement
+					? questionTextElement.textContent
+					: box.textContent || ""
+			);
+			if (!questionText) return;
 
-    async function selectOptionByText(questionBox, answer) {
-        const options = questionBox.querySelectorAll(selectors.optionLabel);
-        let found = false;
-        const answersToClick = Array.isArray(answer) ? answer : [answer];
-        const isMultipleWithDelay = answersToClick.length > 1;
-        for (const optionLabel of options) {
-            const optionTextElement = optionLabel.querySelector(selectors.optionText);
-            if (optionTextElement) {
-                const currentOptionText = optionTextElement.innerText.trim();
-                if (answersToClick.some((ans) => currentOptionText.includes(ans))) {
-                    if (!optionLabel.classList.contains("is-checked")) {
-                        optionLabel.click();
-                        log(`  - 已选择: ${currentOptionText}`);
-                        found = true;
-                        if (isMultipleWithDelay) {
-                            log("多选题，等待1秒...");
-                            await new Promise((resolve) => setTimeout(resolve, 1000));
-                        }
-                    }
-                }
-            }
-        }
-        return found;
-    }
+			const optionLabels = Array.from(
+				box.querySelectorAll(selectors.optionLabel)
+			);
+			const optionsList = optionLabels.map((label, optionIndex) => {
+				const input = label.querySelector(selectors.optionInput);
+				const optionTextElement =
+					label.querySelector(selectors.optionText) ||
+					label.querySelector(".choices-html") ||
+					label.querySelector(".el-radio__label") ||
+					label;
+				const text = cleanText(
+					optionTextElement
+						? optionTextElement.textContent
+						: label.textContent || ""
+				);
+				const key = String.fromCharCode(65 + optionIndex);
+				const valueAttr = input
+					? input.value || input.getAttribute("value")
+					: label.getAttribute("data-value");
+				const optionInfo = {
+					key,
+					text,
+				};
+				if (valueAttr) {
+					optionInfo.value = valueAttr;
+				}
+				if (includeDom) {
+					optionInfo._label = label;
+				}
+				return optionInfo;
+			});
 
-    document
-        .getElementById("ai-single-solve-btn")
-        .addEventListener("click", async () => {
-            const questionBox = document.querySelector(
-                `${selectors.questionBox}:not([style*="display: none"])`
-            );
-            if (!questionBox) {
-                log("❌ 未找到当前题目。");
-                return;
-            }
-            try {
-                log("正在请求AI解答本题...");
-                const answers = await getAiAnswer(questionBox);
-                if (answers && answers.length > 0) {
-                    await selectOptionByText(questionBox, answers);
-                } else {
-                    log("⚠️ AI未能提供有效答案。");
-                }
-            } catch (error) {
-                log(`❌ AI搜题出错: ${error}`);
-            }
-        });
+			if (optionsList.length === 0) return;
 
-    // --- 全自动答题逻辑 ---
-    function isLastQuestion() {
-        const allNumbers = document.querySelectorAll(selectors.answerCardNumbers);
-        if (allNumbers.length === 0) return false;
-        const activeNumberEl = document.querySelector(
-            selectors.activeAnswerCardNumber
-        );
-        if (!activeNumberEl) return false;
-        const lastNumberEl = allNumbers[allNumbers.length - 1];
-        if (activeNumberEl.innerText.trim() === lastNumberEl.innerText.trim()) {
-            return true;
-        }
-        return false;
-    }
+			const info = {
+				index: questionIndex,
+				id: getQuestionId(box),
+				numberLabel: getQuestionNumberLabel(box, questionIndex),
+				type: getQuestionType(box),
+				isMultiple: detectMultiple(box),
+				text: questionText,
+				options: optionsList,
+			};
 
-    const fullAutoBtn = document.getElementById("full-auto-btn");
-    const stopAutoAnswering = () => {
-        isAutoAnswering = false;
-        fullAutoBtn.innerText = "⚡️ 开始全自动 AI 答题";
-        fullAutoBtn.classList.remove("btn-danger");
-        fullAutoBtn.classList.add("btn-primary");
-        log("🔴 全自动答题已停止。");
-    };
+			if (includeDom) {
+				info._element = box;
+			}
 
-    const runAutoAnswerStep = async () => {
-        if (!isAutoAnswering) return;
-        const questionBox = document.querySelector(
-            `${selectors.questionBox}:not([style*="display: none"])`
-        );
-        if (!questionBox) {
-            log("🏁 未找到题目，流程结束。");
-            stopAutoAnswering();
-            return;
-        }
+			questions.push(info);
+		});
 
-        try {
-            const answers = await getAiAnswer(questionBox);
-            if (!isAutoAnswering) return;
-            if (answers && answers.length > 0) {
-                await selectOptionByText(questionBox, answers);
-            } else {
-                log("⚠️ AI未能提供答案，跳过本题。");
-            }
-        } catch (error) {
-            log(`❌ AI搜题出错: ${error}`);
-            stopAutoAnswering();
-            return;
-        }
+		return questions;
+	}
 
-        if (isLastQuestion()) {
-            log("🏁 已到达最后一题（答题卡判断），自动循环停止。");
-            stopAutoAnswering();
-            return;
-        }
+	function findQuestionTextElement(box) {
+		const candidates = [
+			selectors.questionText,
+			".question-title .value",
+			".question-title",
+			".title .value",
+			".title",
+			".stem",
+			".question-stem",
+			".info-item .value",
+		];
+		for (const selector of candidates) {
+			const el = selector ? box.querySelector(selector) : null;
+			if (el && cleanText(el.textContent)) {
+				return el;
+			}
+		}
+		return null;
+	}
 
-        const delay = 2500 + Math.random() * 1000;
-        log(`...等待 ${delay / 1000} 秒后进入下一题...`);
+	function detectMultiple(box) {
+		return !!box.querySelector('input[type="checkbox"]');
+	}
 
-        setTimeout(() => {
-            if (!isAutoAnswering) return;
-            const clickedNext = clickButton(
-                selectors.nextButton,
-                "自动点击“下一题”。",
-                "⚠️ 未找到或隐藏了“下一题”按钮。"
-            );
+	function getQuestionId(box) {
+		return (
+			box.getAttribute("data-question-id") ||
+			box.getAttribute("data-id") ||
+			box.id ||
+			null
+		);
+	}
 
-            if (!clickedNext) {
-                log("🏁 已到达最后一题（按钮判断），自动循环停止。");
-                stopAutoAnswering();
-            } else {
-                setTimeout(runAutoAnswerStep, 1500);
-            }
-        }, delay);
-    };
+	function getQuestionNumberLabel(box, fallbackIndex) {
+		const attrCandidates = [
+			box.getAttribute("data-order"),
+			box.getAttribute("data-index"),
+			box.getAttribute("data-number"),
+		];
+		for (const attr of attrCandidates) {
+			if (attr && attr.trim()) return attr.trim();
+		}
 
-    fullAutoBtn.addEventListener("click", () => {
-        if (isAutoAnswering) {
-            stopAutoAnswering();
-        } else {
-            isAutoAnswering = true;
-            fullAutoBtn.innerText = "🛑 停止全自动答题";
-            fullAutoBtn.classList.remove("btn-primary");
-            fullAutoBtn.classList.add("btn-danger");
-            log("🟢 全自动答题已启动...");
-            runAutoAnswerStep();
-        }
-    });
+		const selectorsToCheck = [
+			".question-index",
+			".q-index",
+			".order-num",
+			".num",
+			".question-num",
+			"[class*='question-index']",
+			"[class*='ques-index']",
+		];
+		for (const selector of selectorsToCheck) {
+			const el = box.querySelector(selector);
+			const text = cleanText(el ? el.textContent : "");
+			if (text) return text;
+		}
+
+		const infoItems = box.querySelectorAll(".info-item");
+		for (const item of infoItems) {
+			const label = cleanText(
+				item.querySelector(".label")?.textContent || ""
+			);
+			const value = cleanText(
+				item.querySelector(".value")?.textContent || ""
+			);
+			if (label && /题号|编号/.test(label) && value) {
+				return value;
+			}
+		}
+
+		return String(fallbackIndex);
+	}
+
+	function getQuestionType(box) {
+		const attrCandidates = [
+			box.getAttribute("data-question-type"),
+			box.getAttribute("data-type"),
+		];
+		for (const attr of attrCandidates) {
+			if (attr && attr.trim()) return attr.trim();
+		}
+
+		const selectorsToCheck = [
+			".question-type",
+			".q-type",
+			".ques-type",
+			".type-name",
+			".question-title .type",
+			".info-item .value .type",
+			".info-item .type",
+			".question-head .type",
+		];
+		for (const selector of selectorsToCheck) {
+			const el = box.querySelector(selector);
+			const text = cleanText(el ? el.textContent : "");
+			if (text) return text;
+		}
+
+		const infoItems = box.querySelectorAll(".info-item");
+		for (const item of infoItems) {
+			const label = cleanText(
+				item.querySelector(".label")?.textContent || ""
+			);
+			const value = cleanText(
+				item.querySelector(".value")?.textContent || ""
+			);
+			if (label && /题型|类型/.test(label) && value) {
+				return value;
+			}
+		}
+
+		return "unknown";
+	}
+
+	function normalizeAnswerPayload(payload) {
+		if (Array.isArray(payload)) {
+			return payload;
+		}
+		if (payload && typeof payload === "object") {
+			if (Array.isArray(payload.answers)) {
+				return payload.answers;
+			}
+			if (Array.isArray(payload.questions)) {
+				return payload.questions;
+			}
+			const entries = [];
+			for (const key of Object.keys(payload)) {
+				entries.push({ key, value: payload[key] });
+			}
+			return entries;
+		}
+		return [];
+	}
+
+	function prepareAnswerEntry(entry) {
+		if (!entry || typeof entry !== "object") {
+			return null;
+		}
+
+		const prepared = {
+			raw: entry,
+			choices: extractChoices(entry),
+		};
+
+		const id = entry.id || entry.questionId || entry.qid;
+		if (id) {
+			prepared.id = String(id).trim();
+		}
+
+		const indexCandidates = [
+			entry.index,
+			entry.idx,
+			entry.questionIndex,
+			entry.order,
+		];
+		for (const candidate of indexCandidates) {
+			if (candidate !== undefined && candidate !== null) {
+				const numericIndex = Number.parseInt(candidate, 10);
+				if (Number.isFinite(numericIndex)) {
+					prepared.index = numericIndex;
+					break;
+				}
+			}
+		}
+
+		const numberCandidates = [
+			entry.number,
+			entry.questionNumber,
+			entry.no,
+			entry.label,
+			entry.key,
+		];
+		for (const candidate of numberCandidates) {
+			if (!candidate) continue;
+			const text = String(candidate).trim();
+			if (!text) continue;
+			prepared.number = text;
+			if (prepared.index === undefined) {
+				const parsed = parseIndexFromString(text);
+				if (parsed !== null) {
+					prepared.index = parsed;
+				}
+			}
+			break;
+		}
+
+		if (prepared.index === undefined && entry.key) {
+			const parsed = parseIndexFromString(String(entry.key));
+			if (parsed !== null) {
+				prepared.index = parsed;
+			}
+		}
+
+		return prepared;
+	}
+
+	function extractChoices(entry) {
+		if (!entry) return [];
+		const primary =
+			entry.choices ??
+			entry.choice ??
+			entry.answers ??
+			entry.answer ??
+			entry.value;
+		return toChoiceArray(primary);
+	}
+
+	function toChoiceArray(value) {
+		if (Array.isArray(value)) {
+			return value.flatMap((item) => toChoiceArray(item));
+		}
+		if (value === undefined || value === null) {
+			return [];
+		}
+		if (typeof value === "string") {
+			const trimmed = value.trim();
+			if (!trimmed) return [];
+			if (/^[A-Za-z]+$/.test(trimmed) && trimmed.length > 1) {
+				return trimmed.split("");
+			}
+			const parts = trimmed
+				.split(/[,，;；]+/)
+				.map((part) => part.trim())
+				.filter(Boolean);
+			return parts.length > 0 ? parts : [trimmed];
+		}
+		if (typeof value === "number") {
+			return [value];
+		}
+		if (typeof value === "object") {
+			return [value];
+		}
+		return [];
+	}
+
+	function parseIndexFromString(value) {
+		if (value === undefined || value === null) return null;
+		const match = String(value).match(/\d+/);
+		return match ? Number.parseInt(match[0], 10) : null;
+	}
+
+	function findMatchingQuestion(entry, questions) {
+		if (entry.id) {
+			const foundById = questions.find(
+				(q) =>
+					q.id &&
+					String(q.id).toLowerCase() === entry.id.toLowerCase()
+			);
+			if (foundById) return foundById;
+		}
+		if (entry.index !== undefined) {
+			const foundByIndex = questions.find(
+				(q) => Number(q.index) === Number(entry.index)
+			);
+			if (foundByIndex) return foundByIndex;
+		}
+		if (entry.number) {
+			const normalizedTarget = normalizeText(entry.number);
+			const foundByNumber = questions.find(
+				(q) =>
+					normalizeText(String(q.numberLabel || q.index)) ===
+					normalizedTarget
+			);
+			if (foundByNumber) return foundByNumber;
+		}
+		if (entry.number) {
+			const parsed = parseIndexFromString(entry.number);
+			if (parsed !== null) {
+				const foundByParsed = questions.find(
+					(q) => Number(q.index) === parsed
+				);
+				if (foundByParsed) return foundByParsed;
+			}
+		}
+		if (entry.text) {
+			const textNorm = normalizeText(entry.text);
+			const foundByText = questions.find((q) =>
+				normalizeText(q.text).includes(textNorm)
+			);
+			if (foundByText) return foundByText;
+		}
+		return null;
+	}
+
+	function selectOptionsForQuestion(question, choices) {
+		if (!question || !Array.isArray(question.options)) return 0;
+		const tokens = choices
+			.map((choice) => normalizeChoiceToken(choice))
+			.filter(Boolean);
+		if (tokens.length === 0) return 0;
+
+		let matched = 0;
+		const usedOptions = new Set();
+
+		for (const token of tokens) {
+			const option = findOptionByToken(
+				question.options,
+				token,
+				usedOptions
+			);
+			if (!option) {
+				log(
+					`题目 ${
+						question.numberLabel || question.index
+					} 未匹配选项: ${token.original}`
+				);
+				continue;
+			}
+			const triggered = triggerOption(option);
+			if (triggered) {
+				matched += 1;
+				usedOptions.add(option);
+			}
+		}
+
+		return matched;
+	}
+
+	function normalizeChoiceToken(raw) {
+		if (raw === undefined || raw === null) return null;
+		if (typeof raw === "object" && !Array.isArray(raw)) {
+			if (raw.key || raw.letter) {
+				const letter = String(raw.key || raw.letter)
+					.trim()
+					.toUpperCase();
+				if (/^[A-Z]$/.test(letter)) {
+					return { kind: "letter", value: letter, original: letter };
+				}
+			}
+			if (raw.value) {
+				const valueText = String(raw.value).trim();
+				if (valueText)
+					return {
+						kind: "value",
+						value: valueText,
+						original: valueText,
+					};
+			}
+			if (raw.text || raw.option) {
+				const optionText = String(raw.text || raw.option).trim();
+				if (optionText)
+					return {
+						kind: "text",
+						value: optionText,
+						original: optionText,
+					};
+			}
+			if (Array.isArray(raw)) {
+				return normalizeChoiceToken(raw[0]);
+			}
+			return null;
+		}
+
+		if (typeof raw === "number") {
+			if (raw >= 1 && raw <= 26) {
+				const letter = String.fromCharCode(64 + raw);
+				return { kind: "letter", value: letter, original: String(raw) };
+			}
+			return { kind: "text", value: String(raw), original: String(raw) };
+		}
+
+		const text = String(raw).trim();
+		if (!text) return null;
+		if (/^[A-Z]$/i.test(text)) {
+			return {
+				kind: "letter",
+				value: text.toUpperCase(),
+				original: text,
+			};
+		}
+		return { kind: "text", value: text, original: text };
+	}
+
+	function findOptionByToken(options, token, used) {
+		const isUnused = (option) => !used.has(option);
+
+		if (token.kind === "letter") {
+			const match = options.find(
+				(option) =>
+					isUnused(option) &&
+					option.key &&
+					option.key.toUpperCase() === token.value
+			);
+			if (match) return match;
+		}
+
+		if (token.kind === "value") {
+			const normalized = token.value.toLowerCase();
+			const match = options.find((option) => {
+				if (!isUnused(option)) return false;
+				if (!option.value) return false;
+				return String(option.value).toLowerCase() === normalized;
+			});
+			if (match) return match;
+		}
+
+		if (token.kind === "text") {
+			const normalized = normalizeText(token.value);
+			let match = options.find((option) => {
+				if (!isUnused(option)) return false;
+				return normalizeText(option.text) === normalized;
+			});
+			if (match) return match;
+
+			match = options.find((option) => {
+				if (!isUnused(option)) return false;
+				return normalizeText(option.text).includes(normalized);
+			});
+			if (match) return match;
+		}
+
+		return null;
+	}
+
+	function triggerOption(option) {
+		if (!option || !option._label) return false;
+		const label = option._label;
+		const input = label.querySelector(selectors.optionInput);
+		if (input) {
+			const isRadio = input.type === "radio";
+			if (!input.checked || !isRadio) {
+				label.click();
+				return true;
+			}
+			return input.checked;
+		}
+		label.click();
+		return true;
+	}
+
+	function describeAnswerTarget(entry) {
+		if (entry.id) return `id=${entry.id}`;
+		if (entry.index !== undefined) return `index=${entry.index}`;
+		if (entry.number) return `number=${entry.number}`;
+		return safeStringify(entry.raw || entry);
+	}
+
+	function copyToClipboard(text) {
+		if (navigator.clipboard && navigator.clipboard.writeText) {
+			return navigator.clipboard.writeText(text);
+		}
+		return new Promise((resolve, reject) => {
+			try {
+				const textarea = document.createElement("textarea");
+				textarea.style.position = "fixed";
+				textarea.style.top = "-2000px";
+				textarea.value = text;
+				document.body.appendChild(textarea);
+				textarea.focus();
+				textarea.select();
+				const succeeded = document.execCommand("copy");
+				document.body.removeChild(textarea);
+				succeeded ? resolve() : reject(new Error("execCommand 失败"));
+			} catch (error) {
+				reject(error);
+			}
+		});
+	}
+
+	function showTextInTextarea(text) {
+		const textarea = document.getElementById("answer-json-input");
+		if (!textarea) return;
+		textarea.value = text;
+		textarea.focus();
+		textarea.select();
+	}
+
+	function cleanText(text) {
+		if (!text) return "";
+		return String(text).replace(/\s+/g, " ").trim();
+	}
+
+	function normalizeText(text) {
+		return cleanText(text).toLowerCase();
+	}
+
+	function safeStringify(value) {
+		try {
+			return JSON.stringify(value);
+		} catch (error) {
+			return String(value);
+		}
+	}
+
+	function timestamp() {
+		const now = new Date();
+		return now.toLocaleTimeString();
+	}
+
+	function buildAiPrompt(questionCount) {
+		const countText =
+			Number.isFinite(questionCount) && questionCount > 0
+				? `${questionCount} 道`
+				: "以下";
+		return [
+			"你是严谨的答题助手。",
+			`请阅读${countText}题目的 JSON 数据，并返回一个 JSON 数组，每一项包含题目标识及答案。`,
+			"输出示例:",
+			"[",
+			"  {",
+			'    "index": 1,',
+			'    "choices": ["A"]',
+			"  }",
+			"]",
+			"若为多选题，请在 choices 中返回多个选项字母。",
+			"不要输出其他解释，仅返回 JSON。",
+		].join("\n");
+	}
 })();

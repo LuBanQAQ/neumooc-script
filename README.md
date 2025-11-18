@@ -1,71 +1,91 @@
 # NEUMOOC 智能助手
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-1.0.4-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-2.0.0-brightgreen.svg)
 ![Language](https://img.shields.io/badge/language-JavaScript-yellow.svg)
 
-一个为NEUMOOC平台设计的油猴（Tampermonkey）脚本。
+适用于 NEUMOOC 平台的 Tampermonkey 脚本，用于导出题目信息与批量填充答案。
 
-## 🚀 安装与设置
+## ✨ 核心功能
+- 一键复制当前页面全部题目，附带标准化 AI prompt + JSON 数据。
+- 支持根据 AI 返回的答案 JSON 自动勾选选项，兼容单选、多选题。
+- 面板支持缩放、拖动与最小化，操作日志实时反馈。
 
-### 1. 安装油猴插件
+## 🚀 快速开始
+1. **安装 Tampermonkey**：
+	 - [Chrome](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
+	 - [Firefox](https://addons.mozilla.org/en-US/firefox/addon/tampermonkey/)
+	 - [Edge](https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd)
+2. **获取脚本**：直接在 Tampermonkey 中粘贴 `neumooc-script.user.js` 的源代码，或使用项目仓库提供的 `@downloadURL` 与 `@updateURL`。
+3. 打开 NEUMOOC 目标页面，确认右侧浮动面板已加载。
 
-首先，您的浏览器需要安装一个用户脚本管理器。推荐使用 **Tampermonkey**。
+## 📝 导出题目 JSON
+1. 点击面板中的「复制题目 JSON」。
+2. 脚本会生成包含 prompt + 题目数据的文本并复制到剪贴板。
+3. 若浏览器权限限制导致复制失败，JSON 会自动写入输入框，可手动复制。
 
-- [Chrome 应用商店](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
-- [Firefox 附加组件](https://addons.mozilla.org/en-US/firefox/addon/tampermonkey/)
-- [Edge 附加组件](https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd)
+### Prompt 模板
+复制内容的开头会附带如下提示词，方便直接粘贴给 AI：
 
-### 2. 安装本脚本
+```
+你是严谨的答题助手。
+请阅读N题目的 JSON 数据，并返回一个 JSON 数组，每一项包含题目标识及答案。
+输出示例:
+[
+	{
+		"index": 1,
+		"choices": ["A"]
+	}
+]
+若为多选题，请在 choices 中返回多个选项字母。
+不要输出其他解释，仅返回 JSON。
+```
 
-**方式一：从 Greasy Fork 安装 (推荐)**
+## 🤖 填充答案
+1. 将 AI 返回的答案 JSON 粘贴到输入框。
+2. 点击「根据 JSON 填充答案」。
+3. 日志会显示每道题的匹配情况及勾选结果。
 
-[点击此处从 Greasy Fork 安装](https://greasyfork.org/zh-CN/scripts/538664-neu-mooc-%E6%99%BA%E8%83%BD%E7%AD%94%E9%A2%98%E5%8A%A9%E6%89%8B-github-release)
+### 支持的答案格式
 
-**方式二：手动安装**
-1.  打开 Tampermonkey 管理面板。
-2.  点击“添加新脚本”选项卡。
-3.  将项目中的 `.js` 文件的**全部内容**复制并粘贴到编辑器中。
-4.  按下 `Ctrl` + `S` 保存脚本。
+最简格式：
 
+```json
+[
+	{
+		"index": 1,
+		"choices": ["A"]
+	},
+	{
+		"index": 2,
+		"choices": ["B", "D"]
+	}
+]
+```
+
+字段说明：
+- `index` / `questionIndex` / `order`：题目序号（从 1 开始）。
+- `number` / `label`：自定义题号文本。
+- `id`：题目唯一标识（若页面提供）。
+- `choices`：答案选项，可使用字母、原始选项值或部分文本。
+
+脚本会按 `id → index → number → 文本` 顺序匹配题目，并支持多选题多次点击。
 
 ## ⚠️ 免责声明
 
-> **在使用本项目前，请您务必仔细阅读并充分理解以下所有条款。**
-> 
-> **一旦您以任何方式（包括但不限于下载、安装、使用、修改、分发）使用本项目，即代表您已完全接受并同意本声明的全部内容。**
+> **在使用本项目前，请务必充分理解以下条款。**
+>
+> **一旦以任何方式（包括下载、安装、使用、修改、分发）使用本项目，即视为已接受本声明。**
 
 ---
 
-#### 1. 项目目的
-本项目（以下简称“本软件”）的创建初衷是出于作者对编程技术的学习与探索，旨在验证特定场景下自动化流程的可行性。所有功能均基于公开的技术实现，仅供个人学习和技术交流使用，**严禁用于任何商业或非法用途**。
-
-#### 2. “按原样”提供
-本软件以“**按原样**” (AS IS) 的形式提供，不附带任何形式的保证，无论是明示的还是暗示的。作者不对以下内容做出任何承诺：
-- 软件功能的`稳定性`、`可靠性`或`持续可用性`。
-- 软件所提供数据或结果的`准确性`和`完整性`。
-- 软件与目标网站的`永久兼容性`（目标网站的任何更新都可能导致本软件部分或全部功能失效）。
-
-#### 3. 使用者责任
-您将对使用本软件的所有行为**负全部责任**。这包括但不限于：
-- **遵守法律法规**：您必须确保您的使用行为符合您所在国家或地区的所有适用法律法规。
-- **遵守平台协议**：您必须遵守目标平台（如 NEU MOOC）的所有用户协议、行为规范及相关政策。
-- **遵守学术诚信规范**：若您为在校学生，您必须严格遵守学校的**学术诚信**规定。使用本软件完成任何计分、考核相关的任务，都可能被认定为学术不端行为。
-
-#### 4. 免责条款 (Limitation of Liability)
-在任何情况下，无论基于何种法律理论（无论是合同、侵权（包括过失）还是其他方面），本软件的作者或版权持有人**均不对任何因使用或无法使用本软件而导致的任何形式的损害承担责任**。
-
-这包括但不限于：
-* 任何直接、间接、偶然、特殊、惩戒性或后果性的损害。
-* 因使用本软件导致的**账号封禁、限制登录、课程成绩无效、学术警告、留校察看、开除学籍**等一切学术或行政处分。
-* 任何数据丢失、利润损失、业务中断等商业或个人损失。
-
-#### 5. 风险自负
-您的使用行为即代表您已充分理解并同意，您将**自行承担**使用本软件可能带来的一切风险，包括但不限于上述条款中提到的所有风险。您承诺，不会因使用本软件而对项目作者追究任何形式的法律或经济责任。
-
-#### 6. 最终解释权
-*本声明的最终解释权归目作者所有。*
+1. **项目目的**：本脚本用于技术研究与个人学习，禁止商业或违规用途。
+2. **按原样提供**：作者不保证功能的稳定性、准确性或与目标网站的持续兼容性。
+3. **使用者责任**：使用者需自行确保符合当地法律、平台协议及学术诚信，因使用导致的后果由使用者承担。
+4. **免责条款**：作者不对任何直接或间接损失负责，包括账号封禁、成绩无效、数据丢失等。
+5. **风险自负**：使用者应理解并接受使用本软件所带来的一切风险。
+6. **最终解释权**：本声明的最终解释权归作者所有。
 
 ## 📄 开源协议
 
-本项目采用 **MIT** 开源许可证。详情请见仓库中的 `LICENSE` 文件。
+本项目采用 **MIT License**，详见仓库中的 `LICENSE` 文件。
