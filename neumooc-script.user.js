@@ -5,7 +5,7 @@
 // @description  NEUMOOC 智能助手 包含各种功能
 // @author       LuBanQAQ
 // @license      MIT
-// @match        https://neustudydl.neumooc.com/*
+// @match        https://*.neumooc.com/*
 // @downloadURL  https://raw.githubusercontent.com/LuBanQAQ/neumooc-script/main/neumooc-script.user.js
 // @updateURL    https://raw.githubusercontent.com/LuBanQAQ/neumooc-script/main/neumooc-script.user.js
 // @grant        GM_addStyle
