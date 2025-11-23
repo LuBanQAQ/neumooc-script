@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NEUMOOC 智能助手
 // @namespace    http://tampermonkey.net/
-// @version      1.0.2
+// @version      1.0.3
 // @description  NEUMOOC 智能助手 包含各种功能
 // @author       LuBanQAQ
 // @license      MIT
@@ -79,7 +79,7 @@
     panel.innerHTML = `
         <div id="control-panel-header">
             <span id="minimize-btn">—</span>
-            <span>🎓 智能助手 v1.0.2 </span>
+            <span>🎓 智能助手 v1.0.3 </span>
         </div>
         <div id="control-panel-body">
             <div class="collapsible-header">⚙️ AI 配置 (点击展开)</div>
@@ -91,6 +91,7 @@
                 <label>Model:</label>
                 <input type="text" id="model-input">
                 <button id="save-config-btn">保存配置</button>
+                <button id="test-ai-connection-btn" class="btn-info">🔌 测试AI连通性</button>
             </div>
 
             <div class="collapsible-header">🛠️ 辅助工具 (点击展开)</div>
@@ -149,6 +150,103 @@
         GM_setValue("apiEndpoint", aiConfig.apiEndpoint);
         GM_setValue("model", aiConfig.model);
         log("✅ AI配置已保存。");
+    });
+
+    // --- 测试 AI 连通性 ---
+    document.getElementById("test-ai-connection-btn").addEventListener("click", async () => {
+        const testApiKey = document.getElementById("api-key-input").value.trim();
+        const testEndpoint = document.getElementById("api-endpoint-input").value.trim();
+        const testModel = document.getElementById("model-input").value.trim();
+
+        if (!testApiKey) {
+            log("❌ 错误：请先输入 API Key。");
+            return;
+        }
+
+        if (!testEndpoint) {
+            log("❌ 错误：请先输入 API Endpoint。");
+            return;
+        }
+
+        if (!testModel) {
+            log("❌ 错误：请先输入 Model。");
+            return;
+        }
+
+        log("🔌 正在测试 AI 连通性...");
+        const startTime = Date.now();
+
+        GM_xmlhttpRequest({
+            method: "POST",
+            url: testEndpoint,
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${testApiKey}`,
+            },
+            data: JSON.stringify({
+                model: testModel,
+                messages: [{ role: "user", content: "Hello, this is a connectivity test. Please respond with 'OK'." }],
+                temperature: 0,
+                max_tokens: 10,
+            }),
+            timeout: 30000, // 30秒超时
+            onload: (res) => {
+                const elapsed = Date.now() - startTime;
+                try {
+                    if (res.status === 200) {
+                        const data = JSON.parse(res.responseText);
+                        if (data.choices && data.choices[0] && data.choices[0].message) {
+                            log(`✅ AI 连通性测试成功！`);
+                            log(`   响应时间: ${elapsed}ms`);
+                            log(`   模型: ${testModel}`);
+                            log(`   AI 回复: ${data.choices[0].message.content}`);
+                        } else {
+                            log(`⚠️ 连接成功，但响应格式异常。`);
+                            log(`   响应时间: ${elapsed}ms`);
+                            log(`   状态码: ${res.status}`);
+                            log(`   响应内容: ${res.responseText.substring(0, 200)}`);
+                        }
+                    } else {
+                        log(`❌ AI 连接失败！`);
+                        log(`   状态码: ${res.status}`);
+                        log(`   响应时间: ${elapsed}ms`);
+                        log(`   错误信息: ${res.responseText.substring(0, 200)}`);
+                        
+                        // 尝试解析具体错误
+                        try {
+                            const errorData = JSON.parse(res.responseText);
+                            if (errorData.error && errorData.error.message) {
+                                log(`   详细错误: ${errorData.error.message}`);
+                            }
+                        } catch (e) {
+                            // 无法解析JSON错误，已显示原始响应
+                        }
+                    }
+                } catch (e) {
+                    log(`❌ 解析响应失败: ${e.message}`);
+                    log(`   响应时间: ${elapsed}ms`);
+                    log(`   原始响应: ${res.responseText.substring(0, 200)}`);
+                }
+            },
+            onerror: (res) => {
+                const elapsed = Date.now() - startTime;
+                log(`❌ AI 连接失败！`);
+                log(`   错误类型: 网络错误或请求被阻止`);
+                log(`   响应时间: ${elapsed}ms`);
+                if (res.error) {
+                    log(`   错误信息: ${res.error}`);
+                }
+                if (res.statusText) {
+                    log(`   状态信息: ${res.statusText}`);
+                }
+                log(`   建议: 检查网络连接、API Endpoint 地址是否正确、防火墙设置`);
+            },
+            ontimeout: () => {
+                log(`❌ AI 连接超时！`);
+                log(`   超时时间: 30秒`);
+                log(`   建议: 检查网络连接速度或更换 API Endpoint`);
+            },
+        });
     });
 
     let isDragging = false,
