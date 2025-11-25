@@ -47,7 +47,20 @@
         model: GM_getValue("model", "gpt-3.5-turbo"),
     };
 
+    const defaultBulkPrompt = `你是一个严谨的考试答题助手。下面提供一组题目的结构化 JSON 数据，请基于题目内容和选项推理正确答案，并严格遵循以下要求：
+题目 JSON 中包含 selectionType 字段（single/multiple/judge），请结合该字段决定答案格式。
+1. 仅返回 JSON 对象，键为题目序号（index 字段），值为正确选项的大写字母。
+2. 当 selectionType 为 single 时，值写单个字母，例如 "A"。
+3. 当 selectionType 为 multiple 时，值写数组或用逗号分隔的多个大写字母，例如 ["A","C"] 或 "A,C"。
+4. 当 selectionType 为 judge 时，使用 A 表示“正确”、B 表示“错误”。
+5. 不要添加解释、Markdown、自然语言描述。
+
+题目数据：
+{{questions}}`;
+    let bulkPromptTemplate = GM_getValue("bulkPromptTemplate", defaultBulkPrompt);
+
     let isAutoAnswering = false;
+    let isBulkJsonAnswering = false;
 
     // --- GUI 样式 ---
     GM_addStyle(`
@@ -59,8 +72,9 @@
         #control-panel button:hover { background-color: #e9e9e9; }
         #control-panel .btn-primary { background-color: #245FE6; color: white; border-color: #245FE6; }
         #control-panel .btn-danger { background-color: #dc3545; color: white; border-color: #dc3545; }
-        #control-panel .btn-info { background-color: #17a2b8; color: white; border-color: #17a2b8; }
-        #control-panel input[type="text"] { width: 100%; padding: 6px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    #control-panel .btn-info { background-color: #17a2b8; color: white; border-color: #17a2b8; }
+    #control-panel input[type="text"] { width: 100%; padding: 6px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    #control-panel textarea { width: 100%; padding: 6px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-family: inherit; font-size: 12px; resize: vertical; min-height: 120px; }
         #log-area { margin-top: 10px; padding: 8px; height: 120px; overflow-y: auto; background-color: #fff; border: 1px solid #ddd; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
         #minimize-btn { cursor: pointer; font-weight: bold; font-size: 18px; padding: 2px 6px; border-radius: 3px; background-color: transparent; transition: background-color 0.2s; }
         #minimize-btn:hover { background-color: rgba(255,255,255,0.2); }
@@ -91,6 +105,9 @@
                 <label>Model:</label>
                 <input type="text" id="model-input">
                 <button id="save-config-btn">保存配置</button>
+                <label>批量答题提示词（包含 {{questions}} 占位符）:</label>
+                <textarea id="bulk-prompt-input" placeholder="自定义批量问答提示词，使用 {{questions}} 插入题目 JSON"></textarea>
+                <button id="save-bulk-prompt-btn">保存提示词</button>
             </div>
 
             <div class="collapsible-header">🛠️ 辅助工具 (点击展开)</div>
@@ -103,6 +120,7 @@
 
             <p><b>核心功能:</b></p>
             <button id="ai-single-solve-btn">🤖 AI 解答当前题目</button>
+            <button id="answer-all-btn" class="btn-info">🧠 一键提取并答完所有题目</button>
             <button id="full-auto-btn" class="btn-primary">⚡️ 开始全自动 AI 答题</button>
             <div id="log-area">等待操作...</div>
         </div>
@@ -123,6 +141,7 @@
         "model",
         "gpt-3.5-turbo"
     );
+    document.getElementById("bulk-prompt-input").value = bulkPromptTemplate;
 
     const log = (message) => {
         const logArea = document.getElementById("log-area");
@@ -150,6 +169,20 @@
         GM_setValue("model", aiConfig.model);
         log("✅ AI配置已保存。");
     });
+
+    document
+        .getElementById("save-bulk-prompt-btn")
+        .addEventListener("click", () => {
+            bulkPromptTemplate = document
+                .getElementById("bulk-prompt-input")
+                .value.trim();
+            if (!bulkPromptTemplate) {
+                bulkPromptTemplate = defaultBulkPrompt;
+                document.getElementById("bulk-prompt-input").value = bulkPromptTemplate;
+            }
+            GM_setValue("bulkPromptTemplate", bulkPromptTemplate);
+            log("✅ 批量提示词已保存。");
+        });
 
     let isDragging = false,
         dragStartTime = 0,
@@ -530,6 +563,235 @@
         return found;
     }
 
+    const sanitizeLetter = (value = "") =>
+        String(value)
+            .toUpperCase()
+            .replace(/[^A-Z]/g, "");
+
+    const normalizeAnswerLetters = (value) => {
+        if (Array.isArray(value)) {
+            return value.map(sanitizeLetter).filter(Boolean);
+        }
+        if (typeof value === "object" && value !== null) {
+            if (value.answer !== undefined) {
+                return normalizeAnswerLetters(value.answer);
+            }
+            if (value.option !== undefined) {
+                return normalizeAnswerLetters(value.option);
+            }
+            return [];
+        }
+        if (value === undefined || value === null) return [];
+        return String(value)
+            .toUpperCase()
+            .split(/[^A-Z]+/)
+            .map((part) => part.trim())
+            .map(sanitizeLetter)
+            .filter(Boolean);
+    };
+
+    const getQuestionIndex = (questionBox, fallback) => {
+        const numText = questionBox
+            ?.querySelector(".item-num .num-box")
+            ?.innerText?.trim();
+        if (!numText) return fallback;
+        const normalized = numText.replace(/[^0-9]/g, "");
+        return normalized || fallback;
+    };
+
+    const detectQuestionType = (box, typeText = "") => {
+        const text = typeText || "";
+        if (text.includes("多选") || box.querySelector(".el-checkbox-group")) {
+            return "multiple";
+        }
+        if (text.includes("判断")) {
+            return "judge";
+        }
+        return "single";
+    };
+
+    const extractAllQuestions = () => {
+        const boxes = Array.from(document.querySelectorAll(selectors.questionBox));
+        return boxes
+            .map((box, idx) => {
+                const index = getQuestionIndex(box, `${idx + 1}`);
+                const questionText = box.querySelector(selectors.questionText)?.innerText.trim();
+                const typeText = box
+                    .querySelector(".question-type .el-tag__content")
+                    ?.innerText?.trim();
+                const selectionType = detectQuestionType(box, typeText);
+                const options = Array.from(box.querySelectorAll(selectors.optionLabel)).map(
+                    (label, optionIdx) => {
+                        const letterText = label
+                            .querySelector(".choices-label")
+                            ?.innerText?.trim();
+                        const letter =
+                            sanitizeLetter(letterText) || String.fromCharCode(65 + optionIdx);
+                        const text =
+                            label.querySelector(selectors.optionText)?.innerText.trim() || "";
+                        return { letter, text };
+                    }
+                );
+                if (!questionText || options.length === 0) {
+                    return null;
+                }
+                return {
+                    index,
+                    type: typeText || "",
+                    selectionType,
+                    question: questionText,
+                    options,
+                };
+            })
+            .filter(Boolean);
+    };
+
+    const buildBulkPrompt = (questions) => {
+        const serialized = JSON.stringify(questions, null, 2);
+        if (bulkPromptTemplate.includes("{{questions}}")) {
+            return bulkPromptTemplate.replace("{{questions}}", serialized);
+        }
+        return `${bulkPromptTemplate}\n\n题目数据：\n${serialized}`;
+    };
+
+    const extractJsonFromResponse = (text) => {
+        if (!text) return null;
+        let cleaned = text.trim();
+        cleaned = cleaned.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+        try {
+            return JSON.parse(cleaned);
+        } catch (e) {
+            // 尝试截取第一个 {...}
+            const first = cleaned.indexOf("{");
+            const last = cleaned.lastIndexOf("}");
+            if (first !== -1 && last !== -1 && last > first) {
+                const snippet = cleaned.slice(first, last + 1);
+                try {
+                    return JSON.parse(snippet);
+                } catch (err) {
+                    console.warn("无法解析 AI JSON", err);
+                }
+            }
+        }
+        return null;
+    };
+
+    const requestBulkAnswers = (prompt) => {
+        return new Promise((resolve, reject) => {
+            aiConfig.apiKey = GM_getValue("apiKey", "");
+            if (!aiConfig.apiKey) {
+                log("❌ 错误：请先配置API Key。");
+                return reject(new Error("API Key not set"));
+            }
+            GM_xmlhttpRequest({
+                method: "POST",
+                url: aiConfig.apiEndpoint,
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${aiConfig.apiKey}`,
+                },
+                data: JSON.stringify({
+                    model: aiConfig.model,
+                    messages: [{ role: "user", content: prompt }],
+                    temperature: 0,
+                }),
+                onload: (res) => {
+                    try {
+                        const data = JSON.parse(res.responseText);
+                        const aiAnswerRaw = data.choices?.[0]?.message?.content || "";
+                        const parsed = extractJsonFromResponse(aiAnswerRaw);
+                        if (!parsed) {
+                            return reject(new Error("无法解析 AI 返回的 JSON。"));
+                        }
+                        resolve(parsed);
+                    } catch (error) {
+                        reject(new Error("AI响应解析失败: " + error.message));
+                    }
+                },
+                onerror: (err) => reject(new Error("AI请求失败: " + err.statusText)),
+            });
+        });
+    };
+
+    async function selectOptionByLetter(questionBox, letters, selectionType = "single") {
+        if (!letters || letters.length === 0) return false;
+        const options = Array.from(questionBox.querySelectorAll(selectors.optionLabel));
+        if (options.length === 0) return false;
+        const letterMap = new Map();
+        options.forEach((label, idx) => {
+            const letterText = label.querySelector(".choices-label")?.innerText?.trim();
+            const letter = sanitizeLetter(letterText) || String.fromCharCode(65 + idx);
+            letterMap.set(letter, label);
+        });
+        let selected = false;
+        const targetLetters = selectionType === "multiple" ? letters : [letters[0]];
+        for (const letter of targetLetters) {
+            const optionLabel = letterMap.get(letter);
+            if (!optionLabel) continue;
+            if (!optionLabel.classList.contains("is-checked")) {
+                optionLabel.click();
+                await wait(150);
+            }
+            selected = true;
+        }
+        return selected;
+    }
+
+    const applyBulkAnswers = async (answerMap, questionsMeta) => {
+        const boxes = Array.from(document.querySelectorAll(selectors.questionBox));
+        const indexToBox = new Map();
+        boxes.forEach((box, idx) => {
+            const index = getQuestionIndex(box, `${idx + 1}`);
+            if (!indexToBox.has(index)) {
+                indexToBox.set(index, box);
+            }
+            const trimmed = index.replace(/\.$/, "");
+            if (trimmed && !indexToBox.has(trimmed)) {
+                indexToBox.set(trimmed, box);
+            }
+        });
+
+        for (const question of questionsMeta) {
+            const targetBox =
+                indexToBox.get(question.index) ||
+                indexToBox.get(question.index.replace(/\.$/, ""));
+            if (!targetBox) {
+                log(`⚠️ 未找到题号 ${question.index} 对应的题目。`);
+                continue;
+            }
+            const rawAnswer =
+                answerMap?.[question.index] ??
+                answerMap?.[question.index.replace(/\.$/, "")] ??
+                answerMap?.[String(parseInt(question.index, 10))];
+            if (rawAnswer === undefined || rawAnswer === null) {
+                log(`⚠️ AI 未返回题号 ${question.index} 的答案。`);
+                continue;
+            }
+            const letters = normalizeAnswerLetters(rawAnswer);
+            if (letters.length === 0) {
+                log(
+                    `⚠️ 无法解析题号 ${question.index} 的答案：${JSON.stringify(rawAnswer)}`
+                );
+                continue;
+            }
+            if (question.selectionType !== "multiple" && letters.length > 1) {
+                log(
+                    `⚠️ 题号 ${question.index} 为${question.selectionType}题，但 AI 返回多个选项，将只取第一个。`
+                );
+            }
+            const success = await selectOptionByLetter(
+                targetBox,
+                letters,
+                question.selectionType
+            );
+            if (success) {
+                log(`✅ 题号 ${question.index} 已填入选项 ${letters.join(",")}`);
+            } else {
+                log(`⚠️ 题号 ${question.index} 的选项 ${letters.join(",")} 未匹配。`);
+            }
+        }
+    };
+
     document
         .getElementById("ai-single-solve-btn")
         .addEventListener("click", async () => {
@@ -552,6 +814,52 @@
                 log(`❌ AI搜题出错: ${error}`);
             }
         });
+
+    const answerAllBtn = document.getElementById("answer-all-btn");
+    const setBulkBtnState = (running) => {
+        if (!answerAllBtn) return;
+        if (running) {
+            answerAllBtn.innerText = "⏳ 正在批量答题...";
+            answerAllBtn.disabled = true;
+            answerAllBtn.classList.remove("btn-info");
+            answerAllBtn.classList.add("btn-danger");
+        } else {
+            answerAllBtn.innerText = "🧠 一键提取并答完所有题目";
+            answerAllBtn.disabled = false;
+            answerAllBtn.classList.remove("btn-danger");
+            answerAllBtn.classList.add("btn-info");
+        }
+    };
+
+    answerAllBtn?.addEventListener("click", async () => {
+        if (isBulkJsonAnswering) {
+            log("⏳ 已在执行批量答题，请稍候...");
+            return;
+        }
+        try {
+            isBulkJsonAnswering = true;
+            setBulkBtnState(true);
+            const questions = extractAllQuestions();
+            if (questions.length === 0) {
+                log("❌ 未检测到可解析的题目。");
+                return;
+            }
+            log(`🧠 已提取 ${questions.length} 道题，正在请求 AI...`);
+            const prompt = buildBulkPrompt(questions);
+            const answerMap = await requestBulkAnswers(prompt);
+            if (!answerMap || Object.keys(answerMap).length === 0) {
+                log("⚠️ AI 未返回任何可用答案。");
+                return;
+            }
+            await applyBulkAnswers(answerMap, questions);
+            log("🎉 批量答题完成，请检查后提交。");
+        } catch (error) {
+            log(`❌ 一键答题失败：${error && error.message ? error.message : error}`);
+        } finally {
+            isBulkJsonAnswering = false;
+            setBulkBtnState(false);
+        }
+    });
 
     // --- 全自动答题逻辑 ---
     function isLastQuestion() {
