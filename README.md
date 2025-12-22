@@ -11,7 +11,7 @@
 如果这个项目对您有帮助，欢迎请我喝杯咖啡！您的支持是我持续维护和改进的动力 ❤️
 
 <div align="center">
-  <img src="./images/wechat-pay.jpg" alt="微信赞助" width="300">
+  <img src="./wechat-pay.jpg" alt="微信赞助" width="300">
   <p><i>微信扫码赞助</i></p>
 </div>
 
