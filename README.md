@@ -1,7 +1,7 @@
 # NEUMOOC 智能助手
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-1.0.4-brightgreen. svg)
+![Version](https://img.shields.io/badge/version-1.0.4-brightgreen.svg)
 ![Language](https://img.shields.io/badge/language-JavaScript-yellow.svg)
 
 一个为NEUMOOC平台设计的油猴（Tampermonkey）脚本。
@@ -57,7 +57,7 @@
 
 适合学生用户，性价比高：
 
-- 🎁 **[领取阿里云高校学生通用权益 - 300元优惠券](https://university.aliyun.com/course/promotion19-activity?clubTaskBiz=subTask..12218312..10256.. &userCode=jgg8c9cg)**
+- 🎁 **[领取阿里云高校学生通用权益 - 300元优惠券](https://university.aliyun.com/course/promotion19-activity?clubTaskBiz=subTask..12218312..10256..&userCode=jgg8c9cg)**
 - 提供免费额度和学生优惠
 - 支持多种大模型（通义千问等）
 - [阿里云百炼控制台](https://www.aliyun.com/product/bailian)
