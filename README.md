@@ -1,5 +1,7 @@
 # NEUMOOC 智能助手
+## Star History
 
+[![Star History Chart](https://api.star-history.com/svg?repos=LuBanQAQ/neumooc-script&type=date&legend=top-left)](https://www.star-history.com/#LuBanQAQ/neumooc-script&type=date&legend=top-left)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Version](https://img.shields.io/badge/version-1.0.4-brightgreen.svg)
 ![Language](https://img.shields.io/badge/language-JavaScript-yellow.svg)
