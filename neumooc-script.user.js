@@ -18,7 +18,7 @@
 // @connect      *
 // ==/UserScript==
 
-    
+
 (function () {
     "use strict";
 
@@ -214,10 +214,10 @@
         const wasDragging = isDragging && hasMoved;
         // 检查拖动时间，过滤掉快速点击
         const dragTime = Date.now() - dragStartTime;
-        
+
         isDragging = false;
         document.body.style.userSelect = "auto";
-        
+
         // 防止拖动结束时误触发最小化按钮的点击事件
         if (wasDragging && e.target.id === "minimize-btn") {
             e.preventDefault();
@@ -229,11 +229,11 @@
             // 点击最小化 => 隐藏面板，显示悬浮球
             const rect = panel.getBoundingClientRect();
             panel.style.display = 'none';
-            
+
             // 将悬浮球放在当前面板的位置附近，确保在可视区域内
             const ballTop = Math.max(10, Math.min(rect.top, window.innerHeight - 58));
             const ballLeft = Math.max(10, Math.min(rect.left, window.innerWidth - 58));
-            
+
             floatingBall.style.top = `${ballTop}px`;
             floatingBall.style.left = `${ballLeft}px`;
             floatingBall.style.right = 'auto';
@@ -281,15 +281,15 @@
                 const rect = floatingBall.getBoundingClientRect();
                 floatingBall.style.display = 'none';
                 panel.style.display = 'block';
-                
+
                 // 将面板移动到悬浮球位置附近，确保面板完全在可视区域内
                 const panelWidth = 320; // 面板宽度
                 const panelHeight = Math.min(panel.offsetHeight || 400, window.innerHeight * 0.8); // 面板高度，最大不超过屏幕80%
-                
+
                 // 计算面板位置，确保不超出屏幕边界
                 let panelLeft = rect.left;
                 let panelTop = rect.top;
-                
+
                 // 右边界检查
                 if (panelLeft + panelWidth > window.innerWidth - 20) {
                     panelLeft = window.innerWidth - panelWidth - 20;
@@ -306,13 +306,13 @@
                 if (panelTop < 20) {
                     panelTop = 20;
                 }
-                
+
                 panel.style.left = `${panelLeft}px`;
                 panel.style.top = `${panelTop}px`;
                 panel.style.right = 'auto'; // 确保不使用right定位
             }
         });
-    
+
 
     // =================================================================
     // 核心修改部分：修正 clickButton 函数
@@ -385,6 +385,49 @@
 
     // --- 完成当前视频 ---
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const safeParseJson = (text) => {
+    const raw = String(text ?? "");
+    if (!raw.trim()) {
+        throw new Error("响应为空，无法解析 JSON");
+    }
+    try {
+        return JSON.parse(raw);
+    } catch (err) {
+        throw new Error(
+            "响应不是合法 JSON。\n原始响应前 500 字符：\n" + raw.slice(0, 500)
+        );
+    }
+};
+
+const extractMessageContentFromResponse = (res) => {
+    console.log("[AI] HTTP状态码:", res.status);
+    console.log("[AI] 原始响应:", res.responseText);
+
+    if (res.status < 200 || res.status >= 300) {
+        throw new Error(
+            `接口状态异常: ${res.status}\n响应前 500 字符:\n${String(res.responseText || "").slice(0, 500)}`
+        );
+    }
+
+    const data = safeParseJson(res.responseText);
+
+    if (data?.error) {
+        throw new Error(
+            "接口返回错误: " +
+                (data.error.message || JSON.stringify(data.error))
+        );
+    }
+
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content) {
+        throw new Error(
+            "响应 JSON 结构异常，未找到 choices[0].message.content。\n响应前 500 字符:\n" +
+                String(res.responseText || "").slice(0, 500)
+        );
+    }
+
+    return content;
+};
     const waitForMetadata = (video, timeout = 5000) => {
         return new Promise((resolve, reject) => {
             if (!video) return reject("未找到视频元素");
@@ -518,16 +561,16 @@
                 }),
                 onload: (res) => {
                     try {
-                        const data = JSON.parse(res.responseText);
-                        const aiAnswerRaw = data.choices[0].message.content;
+                        const aiAnswerRaw = extractMessageContentFromResponse(res);
                         log(`🤖 AI 返回: ${aiAnswerRaw}`);
                         const letters = aiAnswerRaw
-                            .replace(/[^A-Z,]/g, "")
-                            .split(",")
-                            .filter(Boolean);
+                        .toUpperCase()
+                        .replace(/[^A-Z,]/g, "")
+                        .split(",")
+                        .filter(Boolean);
                         const answersText = letters
-                            .map((l) => optionMap[l])
-                            .filter(Boolean);
+                        .map((l) => optionMap[l])
+                        .filter(Boolean);
                         resolve(answersText);
                     } catch (e) {
                         reject("AI响应解析失败: " + e.message);
@@ -695,19 +738,20 @@
                     messages: [{ role: "user", content: prompt }],
                     temperature: 0,
                 }),
-                onload: (res) => {
-                    try {
-                        const data = JSON.parse(res.responseText);
-                        const aiAnswerRaw = data.choices?.[0]?.message?.content || "";
-                        const parsed = extractJsonFromResponse(aiAnswerRaw);
-                        if (!parsed) {
-                            return reject(new Error("无法解析 AI 返回的 JSON。"));
-                        }
-                        resolve(parsed);
-                    } catch (error) {
-                        reject(new Error("AI响应解析失败: " + error.message));
-                    }
-                },
+               onload: (res) => {
+                   try {
+                       const aiAnswerRaw = extractMessageContentFromResponse(res);
+                       const parsed = extractJsonFromResponse(aiAnswerRaw);
+                       if (!parsed) {
+                           return reject(
+                               new Error("无法解析 AI 返回的 JSON。\nAI 原始输出：\n" + aiAnswerRaw)
+                           );
+                       }
+                       resolve(parsed);
+                   } catch (error) {
+                       reject(new Error("AI响应解析失败: " + error.message));
+                   }
+               },
                 onerror: (err) => reject(new Error("AI请求失败: " + err.statusText)),
             });
         });
