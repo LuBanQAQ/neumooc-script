@@ -6,6 +6,7 @@
 // @author       LuBanQAQ
 // @license      MIT
 // @match        https://*.neumooc.com/*
+// @match        https://study.neusoft.edu.cn/*
 // @downloadURL  https://raw.githubusercontent.com/LuBanQAQ/neumooc-script/main/neumooc-script.user.js
 // @updateURL    https://raw.githubusercontent.com/LuBanQAQ/neumooc-script/main/neumooc-script.user.js
 // @grant        GM_addStyle
