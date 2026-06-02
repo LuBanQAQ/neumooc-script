@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NEUMOOC 智能助手
 // @namespace    http://tampermonkey.net/
-// @version      1.0.2
+// @version      1.1.0
 // @description  NEUMOOC 智能助手 包含各种功能
 // @author       LuBanQAQ
 // @license      MIT
@@ -22,6 +22,8 @@
 
 (function () {
     "use strict";
+
+    installStudyProgressProbe();
 
     // --- 配置区 ---
     const selectors = {
@@ -65,26 +67,46 @@
 
     // --- GUI 样式 ---
     GM_addStyle(`
-        #control-panel { position: fixed; top: 150px; right: 20px; width: 320px; background-color: #f1f1f1; border: 1px solid #d3d3d3; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); z-index: 100000; font-family: Arial, sans-serif; color: #333; }
-        #control-panel-header { padding: 10px; cursor: move; background-color: #245FE6; color: white; border-top-left-radius: 8px; border-top-right-radius: 8px; display: flex; justify-content: flex-start; align-items: center; gap: 10px; }
-        #control-panel-body { padding: 15px; display: block; max-height: 70vh; overflow-y: auto; }
+        #control-panel { position: fixed; top: 128px; right: 20px; width: 348px; background: #f7f8fb; border: 1px solid rgba(37, 99, 235, 0.14); border-radius: 8px; box-shadow: 0 18px 42px rgba(15,23,42,0.16), 0 2px 8px rgba(15,23,42,0.08); z-index: 100000; font-family: Arial, "Microsoft YaHei", sans-serif; color: #162033; overflow: hidden; }
+        #control-panel-header { padding: 11px 12px; cursor: move; background: #ffffff; color: #162033; border-bottom: 1px solid #e7ebf2; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+        #control-panel-title { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 14px; letter-spacing: 0; }
+        #control-panel-title::before { content: ""; width: 8px; height: 18px; border-radius: 4px; background: #2563eb; display: inline-block; }
+        #control-panel-version { padding: 2px 6px; border-radius: 999px; background: #eef2ff; color: #4f46e5; font-weight: 700; font-size: 11px; }
+        #control-panel-body { padding: 10px; display: block; max-height: 74vh; overflow-y: auto; scrollbar-width: thin; }
         #control-panel-body.minimized { display: none; }
-        #control-panel button { display: block; width: 100%; padding: 8px 12px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; background-color: #fff; cursor: pointer; text-align: left; font-size: 13px; }
-        #control-panel button:hover { background-color: #e9e9e9; }
-        #control-panel .btn-primary { background-color: #245FE6; color: white; border-color: #245FE6; }
+        #control-panel button { display: flex; width: 100%; min-height: 36px; align-items: center; justify-content: flex-start; padding: 8px 10px; border: 1px solid #dfe5ee; border-radius: 6px; background: #fff; color: #1f2937; cursor: pointer; text-align: left; font-size: 13px; line-height: 1.25; box-sizing: border-box; box-shadow: 0 1px 0 rgba(15,23,42,0.03); transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.08s; }
+        #control-panel button:hover { background-color: #f8fbff; border-color: #b7c7e6; box-shadow: 0 2px 8px rgba(37,99,235,0.08); }
+        #control-panel button:active { transform: translateY(1px); }
+        #control-panel button:disabled { cursor: not-allowed; opacity: 0.65; transform: none; }
+        #control-panel .btn-primary { background: #2563eb; color: white; border-color: #2563eb; box-shadow: 0 6px 14px rgba(37,99,235,0.18); }
+        #control-panel .btn-primary:hover { background-color: #1d4ed8; border-color: #1d4ed8; box-shadow: 0 8px 18px rgba(37,99,235,0.24); }
         #control-panel .btn-danger { background-color: #dc3545; color: white; border-color: #dc3545; }
-    #control-panel .btn-info { background-color: #17a2b8; color: white; border-color: #17a2b8; }
-    #control-panel input[type="text"] { width: 100%; padding: 6px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-    #control-panel textarea { width: 100%; padding: 6px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-family: inherit; font-size: 12px; resize: vertical; min-height: 120px; }
-        #log-area { margin-top: 10px; padding: 8px; height: 120px; overflow-y: auto; background-color: #fff; border: 1px solid #ddd; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
-        #minimize-btn { cursor: pointer; font-weight: bold; font-size: 18px; padding: 2px 6px; border-radius: 3px; background-color: transparent; transition: background-color 0.2s; }
-        #minimize-btn:hover { background-color: rgba(255,255,255,0.2); }
-        .collapsible-header { cursor: pointer; font-weight: bold; margin-top: 10px; padding-bottom: 5px; border-bottom: 1px solid #ccc; }
-        .collapsible-content { display: none; padding-top: 10px; }
+        #control-panel .btn-danger:hover { background-color: #bd2635; border-color: #bd2635; }
+        #control-panel .btn-info { background-color: #0f766e; color: white; border-color: #0f766e; box-shadow: 0 6px 14px rgba(15,118,110,0.14); }
+        #control-panel .btn-info:hover { background-color: #0b645d; border-color: #0b645d; }
+        #control-panel label { display: block; margin: 8px 0 5px; color: #64748b; font-size: 12px; font-weight: 700; }
+        #control-panel input[type="text"] { width: 100%; padding: 8px 9px; border: 1px solid #dfe5ee; border-radius: 6px; box-sizing: border-box; background: #fbfdff; color: #172033; outline: none; }
+        #control-panel textarea { width: 100%; padding: 8px 9px; border: 1px solid #dfe5ee; border-radius: 6px; box-sizing: border-box; background: #fbfdff; color: #172033; font-family: inherit; font-size: 12px; resize: vertical; min-height: 96px; outline: none; }
+        #control-panel input[type="text"]:focus, #control-panel textarea:focus { border-color: #93b4ee; box-shadow: 0 0 0 3px rgba(37,99,235,0.10); background: #fff; }
+        #log-area { padding: 8px 9px; height: 132px; overflow-y: auto; background: #fbfdff; border: 1px solid #dfe5ee; border-radius: 6px; color: #334155; font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-wrap: break-word; }
+        #log-area div { padding: 3px 0; border-bottom: 1px solid #edf1f7; }
+        #log-area div:last-child { border-bottom: 0; }
+        #minimize-btn { cursor: pointer; font-weight: bold; font-size: 18px; line-height: 1; padding: 2px 8px; border-radius: 6px; color: #64748b; background-color: #f1f5f9; transition: background-color 0.2s, color 0.2s; }
+        #minimize-btn:hover { background-color: #e2e8f0; color: #1e293b; }
+        .panel-section { margin-bottom: 9px; padding: 10px; background: rgba(255,255,255,0.86); border: 1px solid #e6ebf2; border-radius: 8px; }
+        .panel-section:last-child { margin-bottom: 0; }
+        .panel-section-title { margin-bottom: 8px; color: #475569; font-weight: 800; font-size: 12px; letter-spacing: 0.02em; }
+        .panel-section-title::after { content: ""; display: block; width: 22px; height: 2px; margin-top: 5px; border-radius: 2px; background: #94a3b8; }
+        .panel-actions { display: grid; gap: 7px; }
+        .panel-actions.two-cols { grid-template-columns: 1fr 1fr; }
+        .collapsible-header { cursor: pointer; display: flex; align-items: center; justify-content: space-between; margin-bottom: 0; padding: 10px; background: rgba(255,255,255,0.86); border: 1px solid #e6ebf2; border-radius: 8px; color: #475569; font-weight: 800; font-size: 12px; letter-spacing: 0.02em; }
+        .collapsible-header::after { content: "展开"; color: #64748b; font-weight: 700; font-size: 11px; }
+        .collapsible-header:has(+ .collapsible-content.visible)::after { content: "收起"; }
+        .collapsible-content { display: none; margin: -1px 0 9px; padding: 0 10px 10px; background: rgba(255,255,255,0.86); border: 1px solid #e6ebf2; border-top: 0; border-radius: 0 0 8px 8px; }
         .collapsible-content.visible { display: block; }
 
     /* 悬浮球样式 */
-    #floating-ball { position: fixed; width: 48px; height: 48px; border-radius: 50%; background-color: #245FE6; color: #fff; display: none; align-items: center; justify-content: center; box-shadow: 0 4px 8px rgba(0,0,0,0.2); z-index: 100001; cursor: move; user-select: none; }
+    #floating-ball { position: fixed; width: 48px; height: 48px; border-radius: 50%; background-color: #2563eb; color: #fff; display: none; align-items: center; justify-content: center; box-shadow: 0 8px 18px rgba(37,99,235,0.24); z-index: 100001; cursor: move; user-select: none; }
     #floating-ball span { pointer-events: none; font-size: 18px; }
     `);
 
@@ -93,37 +115,60 @@
     panel.id = "control-panel";
     panel.innerHTML = `
         <div id="control-panel-header">
+            <span id="control-panel-title">🎓 智能助手 <span id="control-panel-version">v1.1.0</span></span>
             <span id="minimize-btn">—</span>
-            <span>🎓 智能助手 v1.0.2 </span>
         </div>
         <div id="control-panel-body">
-            <div class="collapsible-header">⚙️ AI 配置 (点击展开)</div>
+            <div class="panel-section">
+                <div class="panel-section-title">核心操作</div>
+                <div class="panel-actions">
+                    <button id="ai-single-solve-btn">🤖 AI 解答当前题目</button>
+                    <button id="answer-all-btn" class="btn-info">🧠 一键提取并答完所有题目</button>
+                    <button id="full-auto-btn" class="btn-primary">⚡️ 开始全自动 AI 答题</button>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-section-title">学习资料</div>
+                <div class="panel-actions">
+                    <button id="direct-finish-video-btn" class="btn-primary">⚡ 学习资料直传完成</button>
+                    <button id="finish-video-btn">🎬 完成当前视频</button>
+                </div>
+            </div>
+
+            <div class="collapsible-header">🛠️ 辅助工具</div>
             <div class="collapsible-content">
-                <label>API Key:</label>
+                <div class="panel-actions">
+                    <button id="copy-question-btn" class="btn-info">📋 复制当前题目和选项</button>
+                    <div class="panel-actions two-cols">
+                        <button id="test-prev-btn">◀️ 上一题</button>
+                        <button id="test-next-btn">▶️ 下一题</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="collapsible-header">⚙️ AI 配置</div>
+            <div class="collapsible-content">
+                <label>API Key</label>
                 <input type="text" id="api-key-input" placeholder="输入你的 API Key">
-                <label>API Endpoint:</label>
+                <label>API Endpoint</label>
                 <input type="text" id="api-endpoint-input">
-                <label>Model:</label>
+                <label>Model</label>
                 <input type="text" id="model-input">
-                <button id="save-config-btn">保存配置</button>
-                <label>批量答题提示词（包含 {{questions}} 占位符）:</label>
+                <div class="panel-actions">
+                    <button id="save-config-btn">保存配置</button>
+                </div>
+                <label>批量答题提示词（包含 {{questions}} 占位符）</label>
                 <textarea id="bulk-prompt-input" placeholder="自定义批量问答提示词，使用 {{questions}} 插入题目 JSON"></textarea>
-                <button id="save-bulk-prompt-btn">保存提示词</button>
+                <div class="panel-actions">
+                    <button id="save-bulk-prompt-btn">保存提示词</button>
+                </div>
             </div>
 
-            <div class="collapsible-header">🛠️ 辅助工具 (点击展开)</div>
-            <div class="collapsible-content">
-                <button id="copy-question-btn" class="btn-info">📋 复制当前题目和选项</button>
-                <button id="test-prev-btn">◀️ “上一题”</button>
-                <button id="test-next-btn">▶️ “下一题”</button>
-                <button id="finish-video-btn">🎬 完成当前视频</button>
+            <div class="panel-section">
+                <div class="panel-section-title">运行日志</div>
+                <div id="log-area">等待操作...</div>
             </div>
-
-            <p><b>核心功能:</b></p>
-            <button id="ai-single-solve-btn">🤖 AI 解答当前题目</button>
-            <button id="answer-all-btn" class="btn-info">🧠 一键提取并答完所有题目</button>
-            <button id="full-auto-btn" class="btn-primary">⚡️ 开始全自动 AI 答题</button>
-            <div id="log-area">等待操作...</div>
         </div>
     `;
     document.body.appendChild(panel);
@@ -429,6 +474,715 @@ const extractMessageContentFromResponse = (res) => {
 
     return content;
 };
+
+    function installStudyProgressProbe() {
+        const source = `(() => {
+            if (window.__neumoocStudyProgressProbeInstalled) return;
+            window.__neumoocStudyProgressProbeInstalled = true;
+            const key = "__neumooc_study_progress_requests__";
+            const idsFrom = (text) => Array.from(String(text || "").matchAll(/\\d{12,}/g)).map((m) => m[0]);
+            const save = (item) => {
+                try {
+                    const url = String(item.url || "");
+                    const body = typeof item.body === "string" ? item.body : "";
+                    const haystack = (url + "\\n" + body).toLowerCase();
+                    if (!/(learn|study|course|resource|video|progress|record|play|finish|complete|duration|time)/.test(haystack)) return;
+                    if (!/(neumooc|neusoft|neuedu|studentlearncourse|courseStudy)/i.test(url + location.href)) return;
+                    item.ts = Date.now();
+                    item.pageUrl = location.href;
+                    item.pageIds = idsFrom(location.href);
+                    const list = JSON.parse(localStorage.getItem(key) || "[]");
+                    const identity = [item.type, item.method, item.url, item.body].join("\\n");
+                    const next = list.filter((old) => [old.type, old.method, old.url, old.body].join("\\n") !== identity);
+                    next.unshift(item);
+                    localStorage.setItem(key, JSON.stringify(next.slice(0, 120)));
+                } catch (err) {}
+            };
+            const normalizeBody = (body) => {
+                if (body == null) return "";
+                if (typeof body === "string") return body;
+                if (body instanceof URLSearchParams) return body.toString();
+                if (body instanceof FormData) {
+                    const params = new URLSearchParams();
+                    body.forEach((value, name) => {
+                        if (typeof value === "string") params.append(name, value);
+                    });
+                    return params.toString();
+                }
+                try { return JSON.stringify(body); } catch (err) { return ""; }
+            };
+            const normalizeHeaders = (headers) => {
+                const out = {};
+                try {
+                    if (!headers) return out;
+                    new Headers(headers).forEach((value, name) => {
+                        out[name] = value;
+                    });
+                } catch (err) {}
+                return out;
+            };
+            const originalFetch = window.fetch;
+            if (typeof originalFetch === "function") {
+                window.fetch = function(input, init) {
+                    try {
+                        const url = typeof input === "string" ? input : input && input.url;
+                        const method = (init && init.method) || (input && input.method) || "GET";
+                        const body = init && "body" in init ? normalizeBody(init.body) : "";
+                        const headers = normalizeHeaders((init && init.headers) || (input && input.headers));
+                        const item = { type: "fetch", url, method, body, headers };
+                        const result = originalFetch.apply(this, arguments);
+                        result.then((res) => {
+                            try {
+                                item.status = res.status;
+                                res.clone().text().then((text) => {
+                                    item.responseText = String(text || "").slice(0, 5000);
+                                    save(item);
+                                }).catch(() => save(item));
+                            } catch (err) {
+                                save(item);
+                            }
+                        }).catch(() => save(item));
+                        return result;
+                    } catch (err) {}
+                    return originalFetch.apply(this, arguments);
+                };
+            }
+            const originalOpen = XMLHttpRequest.prototype.open;
+            const originalSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
+            const originalSend = XMLHttpRequest.prototype.send;
+            XMLHttpRequest.prototype.open = function(method, url) {
+                this.__neumoocProbe = { type: "xhr", method, url, headers: {} };
+                return originalOpen.apply(this, arguments);
+            };
+            XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
+                try {
+                    if (this.__neumoocProbe) this.__neumoocProbe.headers[String(name).toLowerCase()] = String(value);
+                } catch (err) {}
+                return originalSetRequestHeader.apply(this, arguments);
+            };
+            XMLHttpRequest.prototype.send = function(body) {
+                try {
+                    const item = this.__neumoocProbe || {};
+                    item.body = normalizeBody(body);
+                    this.addEventListener("loadend", () => {
+                        try {
+                            item.status = this.status;
+                            item.responseText = String(this.responseText || "").slice(0, 5000);
+                        } catch (err) {}
+                        save(item);
+                    }, { once: true });
+                } catch (err) {}
+                return originalSend.apply(this, arguments);
+            };
+            const originalBeacon = navigator.sendBeacon && navigator.sendBeacon.bind(navigator);
+            if (originalBeacon) {
+                navigator.sendBeacon = function(url, data) {
+                    try { save({ type: "beacon", method: "POST", url, body: normalizeBody(data) }); } catch (err) {}
+                    return originalBeacon(url, data);
+                };
+            }
+        })();`;
+        try {
+            const script = document.createElement("script");
+            script.textContent = source;
+            (document.documentElement || document.head || document.body).appendChild(script);
+            script.remove();
+        } catch (err) {}
+        try {
+            const run = new Function(source);
+            run();
+        } catch (err) {}
+    }
+
+    const progressCaptureKey = "__neumooc_study_progress_requests__";
+    const completionFieldPattern = /(progress|process|percent|rate|current|position|play|watch|study|learn|view|duration|time|finish|complete|end|status)/i;
+
+    function getPageIds(url = location.href) {
+        return Array.from(String(url || "").matchAll(/\d{12,}/g)).map((m) => m[0]);
+    }
+
+    function rebaseCapturedText(text, sourceIds, targetIds) {
+        let next = String(text || "");
+        sourceIds.forEach((id, index) => {
+            if (targetIds[index] && targetIds[index] !== id) {
+                next = next.split(id).join(targetIds[index]);
+            }
+        });
+        return next;
+    }
+
+    function completionValueForKey(key, oldValue, duration) {
+        const name = String(key || "").toLowerCase();
+        if (/(isfinish|isfinished|finished|complete|completed|iscomplete|iscompleted|endflag|finishflag)/.test(name)) {
+            if (typeof oldValue === "boolean") return true;
+            if (typeof oldValue === "string") return "1";
+            return 1;
+        }
+        if (/(status|state)/.test(name)) {
+            if (typeof oldValue === "string") return /finish|complete|done|1/i.test(oldValue) ? oldValue : "completed";
+            return oldValue === 0 ? 1 : oldValue;
+        }
+        if (/(progress|process|percent)/.test(name)) return 100;
+        if (/(rate)/.test(name)) return 1;
+        if (/(duration|totaltime|videotime|alltime)/.test(name)) return duration;
+        if (/(current|position|play|watch|study|learn|view|time|end)/.test(name)) return duration;
+        return oldValue;
+    }
+
+    function markJsonCompleted(value, duration) {
+        if (Array.isArray(value)) {
+            return value.map((item) => markJsonCompleted(item, duration));
+        }
+        if (value && typeof value === "object") {
+            const out = {};
+            Object.entries(value).forEach(([key, child]) => {
+                out[key] = completionFieldPattern.test(key)
+                    ? completionValueForKey(key, child, duration)
+                    : markJsonCompleted(child, duration);
+            });
+            return out;
+        }
+        return value;
+    }
+
+    function completeUrlEncodedBody(body, duration) {
+        const params = new URLSearchParams(body);
+        let changed = false;
+        Array.from(params.keys()).forEach((key) => {
+            if (completionFieldPattern.test(key)) {
+                params.set(key, String(completionValueForKey(key, params.get(key), duration)));
+                changed = true;
+            }
+        });
+        return changed ? params.toString() : body;
+    }
+
+    function completeRequestBody(body, duration) {
+        const raw = String(body || "");
+        if (!raw) return raw;
+        try {
+            const json = JSON.parse(raw);
+            return JSON.stringify(markJsonCompleted(json, duration));
+        } catch (err) {}
+        if (raw.includes("=")) return completeUrlEncodedBody(raw, duration);
+        return raw;
+    }
+
+    function completeRequestUrl(url, duration) {
+        try {
+            const next = new URL(url, location.href);
+            let changed = false;
+            next.searchParams.forEach((value, key) => {
+                if (completionFieldPattern.test(key)) {
+                    next.searchParams.set(key, String(completionValueForKey(key, value, duration)));
+                    changed = true;
+                }
+            });
+            return changed ? next.toString() : String(url);
+        } catch (err) {
+            return String(url || "");
+        }
+    }
+
+    function buildReplayHeaders(item, body) {
+        const headers = {};
+        Object.entries(item.headers || {}).forEach(([name, value]) => {
+            const lower = String(name).toLowerCase();
+            if (!/^(accept-encoding|connection|content-length|cookie|host|origin|referer|user-agent)$/i.test(lower)) {
+                headers[lower] = value;
+            }
+        });
+        if (body && !headers["content-type"]) {
+            headers["content-type"] = body.trim().startsWith("{")
+                ? "application/json;charset=UTF-8"
+                : "application/x-www-form-urlencoded;charset=UTF-8";
+        }
+        return Object.keys(headers).length ? headers : undefined;
+    }
+
+    function getCapturedProgressRequests() {
+        try {
+            const list = JSON.parse(localStorage.getItem(progressCaptureKey) || "[]");
+            return Array.isArray(list) ? list : [];
+        } catch (err) {
+            return [];
+        }
+    }
+
+    function isReadOnlyCourseEndpoint(item) {
+        const url = String(item.url || "").toLowerCase();
+        const method = String(item.method || "GET").toUpperCase();
+        if (method === "GET") return true;
+        if (/(\/list(resource|tree)?\b|listresource|listtree|get-folder-route|\/stats\b|\/test\/stats\b|\/page\b|\/query\b|\/detail\b)/i.test(url)) {
+            return true;
+        }
+        return false;
+    }
+
+    function requestLooksMutable(item) {
+        const method = String(item.method || "GET").toUpperCase();
+        const text = `${item.url || ""}\n${item.body || ""}`.toLowerCase();
+        if (!/^(POST|PUT|PATCH)$/i.test(method)) return false;
+        if (isReadOnlyCourseEndpoint(item)) return false;
+        return /(save|update|submit|record|progress|process|finish|complete|duration|play|watch|study|learn|current|position|heartbeat|point|time)/.test(text);
+    }
+
+    function makeCompletionReplay(item, targetIds, duration) {
+        const sourceIds = Array.isArray(item.pageIds) ? item.pageIds : getPageIds(item.pageUrl);
+        const rawUrl = rebaseCapturedText(item.url, sourceIds, targetIds);
+        const rawBody = rebaseCapturedText(item.body, sourceIds, targetIds);
+        const method = String(item.method || (rawBody ? "POST" : "GET")).toUpperCase();
+        const url = completeRequestUrl(rawUrl, duration);
+        const body = method === "GET" ? undefined : completeRequestBody(rawBody, duration);
+        const changed = url !== rawUrl || body !== rawBody;
+        return { method, url, body, changed };
+    }
+
+    function scoreProgressRequest(item) {
+        const text = `${item.url || ""}\n${item.body || ""}`.toLowerCase();
+        let score = 0;
+        if (!requestLooksMutable(item)) return -100;
+        if (/progress|process|percent/.test(text)) score += 5;
+        if (/finish|complete|completed|ended|status/.test(text)) score += 4;
+        if (/duration|current|play|watch|study|learn|time/.test(text)) score += 3;
+        if (/video|resource|course|lesson|chapter/.test(text)) score += 2;
+        if (/api|gateway|service/.test(text)) score += 1;
+        return score;
+    }
+
+    function extractCourseStudyIds(url = location.href) {
+        const match = String(url || "").match(/studentLearnCourse\/([^/?#]+)\/([^/?#]+)\/([^/?#]+)\/([^/?#]+)\/([^/?#]+)/);
+        if (!match) return null;
+        return {
+            teachCourseId: match[1],
+            teachArrangementId: match[3],
+            currentClassId: match[4],
+        };
+    }
+
+    async function neumoocPost(path, data) {
+        const headers = await buildStudyApiHeaders(path);
+        const res = await fetch(`/web-api${path}`, {
+            method: "POST",
+            credentials: "include",
+            headers,
+            body: JSON.stringify(data),
+        });
+        const text = await res.text();
+        let json;
+        try {
+            json = JSON.parse(text);
+        } catch (err) {
+            throw new Error(`${path} 返回非 JSON: ${text.slice(0, 200)}`);
+        }
+        if (!res.ok || json.code !== 0) {
+            throw new Error(`${path} 失败: HTTP ${res.status}, ${json.msg || text.slice(0, 200)}`);
+        }
+        return json.data;
+    }
+
+    function readStorageValue(key) {
+        try {
+            return localStorage.getItem(key) || sessionStorage.getItem(key) || "";
+        } catch (err) {
+            return "";
+        }
+    }
+
+    function findStorageToken() {
+        const extractToken = (value) => {
+            const raw = String(value || "").trim();
+            if (!raw) return "";
+            if (/^Bearer\s+\S+/i.test(raw)) return raw;
+            if (/^[a-f0-9]{24,}|[A-Za-z0-9._-]{24,}$/.test(raw)) return raw;
+            try {
+                const json = JSON.parse(raw);
+                const stack = [json];
+                while (stack.length) {
+                    const item = stack.shift();
+                    if (!item || typeof item !== "object") continue;
+                    for (const [key, child] of Object.entries(item)) {
+                        if (/token|authorization|access/i.test(key) && typeof child === "string" && child.length > 12) {
+                            return child;
+                        }
+                        if (child && typeof child === "object") stack.push(child);
+                    }
+                }
+            } catch (err) {}
+            const match = raw.match(/(?:Bearer\s+)?([A-Za-z0-9._-]{24,})/);
+            return match ? match[0] : "";
+        };
+        const preferredKeys = [
+            "Authorization",
+            "authorization",
+            "accessToken",
+            "access_token",
+            "token",
+            "Token",
+            "satoken",
+            "sa-token",
+            "Admin-Token",
+        ];
+        for (const key of preferredKeys) {
+            const value = extractToken(readStorageValue(key));
+            if (value) return value;
+        }
+
+        try {
+            const stores = [localStorage, sessionStorage];
+            for (const store of stores) {
+                for (let i = 0; i < store.length; i += 1) {
+                    const key = store.key(i);
+                    const raw = store.getItem(key);
+                    if (!/token|authorization|auth|user|store|pinia/i.test(key || "") && !/token|authorization/i.test(raw || "")) continue;
+                    const value = extractToken(raw);
+                    if (value) return value;
+                }
+            }
+        } catch (err) {}
+        return "";
+    }
+
+    function normalizeBearerToken(value) {
+        const token = String(value || "").trim().replace(/^"|"$/g, "");
+        if (!token) return "";
+        return /^bearer\s+/i.test(token) ? token : `Bearer ${token}`;
+    }
+
+    function findCapturedStudyHeaders(path) {
+        const target = String(path || "").toLowerCase();
+        const captures = getCapturedProgressRequests();
+        return captures.find((item) => {
+            const url = String(item.url || "").toLowerCase();
+            return url.includes("/web-api/teachmanager/") && (!target || url.includes(target));
+        })?.headers || captures.find((item) => {
+            const url = String(item.url || "").toLowerCase();
+            return url.includes("/web-api/teachmanager/");
+        })?.headers || {};
+    }
+
+    function findTenantId(capturedHeaders) {
+        const captured = capturedHeaders["tenant-id"] || capturedHeaders["tenantid"];
+        if (captured) return captured;
+        const stored = readStorageValue("tenant-id") || readStorageValue("tenantId") || readStorageValue("tenant_id");
+        if (stored) return stored.replace(/^"|"$/g, "");
+        const match = document.documentElement.innerHTML.match(/tenantId["':\s]+(\d{10,})/i);
+        return match ? match[1] : "";
+    }
+
+    function findCurrentUserId() {
+        const fromCapturedUrl = getCapturedProgressRequests()
+            .map((item) => String(item.url || ""))
+            .map((url) => {
+                try {
+                    const parsed = new URL(url, location.href);
+                    return parsed.searchParams.get("userId") || parsed.pathname.match(/resourcesLearning\/index\/[^/]+\/[^/]+\/[^/]+\/(\d{12,})/)?.[1] || "";
+                } catch (err) {
+                    return "";
+                }
+            })
+            .find(Boolean);
+        if (fromCapturedUrl) return fromCapturedUrl;
+
+        const inspectValue = (value) => {
+            const raw = String(value || "");
+            if (!raw) return "";
+            try {
+                const json = JSON.parse(raw);
+                const stack = [json];
+                while (stack.length) {
+                    const item = stack.shift();
+                    if (!item || typeof item !== "object") continue;
+                    if (typeof item.id === "string" && /^\d{12,}$/.test(item.id)) return item.id;
+                    if (typeof item.userId === "string" && /^\d{12,}$/.test(item.userId)) return item.userId;
+                    for (const child of Object.values(item)) {
+                        if (child && typeof child === "object") stack.push(child);
+                    }
+                }
+            } catch (err) {}
+            return raw.match(/"?(?:id|userId)"?\s*[:=]\s*"?(\d{12,})"?/)?.[1] || "";
+        };
+
+        try {
+            for (const store of [localStorage, sessionStorage]) {
+                for (let i = 0; i < store.length; i += 1) {
+                    const key = store.key(i);
+                    const raw = store.getItem(key);
+                    if (!/user|pinia|store|info|profile/i.test(key || "") && !/"userId"|"id"/.test(raw || "")) continue;
+                    const found = inspectValue(raw);
+                    if (found) return found;
+                }
+            }
+        } catch (err) {}
+
+        return document.documentElement.innerHTML.match(/userId["':\s]+(\d{12,})/i)?.[1] || "";
+    }
+
+    function uuidForIdCode() {
+        const webCrypto = globalThis.crypto;
+        if (webCrypto?.randomUUID) return webCrypto.randomUUID();
+        return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
+            (Number(c) ^ (webCrypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (Number(c) / 4)))).toString(16)
+        );
+    }
+
+    async function aesCbcZeroPaddingBase64(text) {
+        const webCrypto = globalThis.crypto;
+        if (!webCrypto?.subtle) return "";
+        const encoder = new TextEncoder();
+        const keyBytes = encoder.encode("neuedu_nse_12345");
+        const input = encoder.encode(text);
+        const blockSize = 16;
+        const paddedLength = Math.ceil(input.length / blockSize) * blockSize || blockSize;
+        const padded = new Uint8Array(paddedLength);
+        padded.set(input);
+        const key = await webCrypto.subtle.importKey("raw", keyBytes, { name: "AES-CBC" }, false, ["encrypt"]);
+        const encrypted = await webCrypto.subtle.encrypt({ name: "AES-CBC", iv: keyBytes }, key, padded);
+        let binary = "";
+        new Uint8Array(encrypted).forEach((byte) => {
+            binary += String.fromCharCode(byte);
+        });
+        return btoa(binary);
+    }
+
+    async function buildIdCode(path, capturedHeaders) {
+        const userId = findCurrentUserId();
+        if (!userId) return capturedHeaders["id-code"] || capturedHeaders["Id-Code"] || "";
+        try {
+            return await aesCbcZeroPaddingBase64(`${userId}_${uuidForIdCode()}_${path}`);
+        } catch (err) {
+            return capturedHeaders["id-code"] || capturedHeaders["Id-Code"] || "";
+        }
+    }
+
+    async function buildStudyApiHeaders(path) {
+        const capturedHeaders = findCapturedStudyHeaders(path);
+        const headers = {
+            "content-type": "application/json",
+            "accept": "application/json, text/plain, */*",
+        };
+        const authorization = capturedHeaders.authorization || capturedHeaders.Authorization || findStorageToken();
+        const tenantId = findTenantId(capturedHeaders);
+        const idCode = await buildIdCode(path, capturedHeaders);
+
+        if (authorization) headers.Authorization = normalizeBearerToken(authorization);
+        if (tenantId) headers["tenant-id"] = tenantId;
+        if (idCode) headers["Id-Code"] = idCode;
+        return headers;
+    }
+
+    function isCompletableStudyResource(item) {
+        const ext = String(item.resExt || "").toLowerCase();
+        const name = String(item.name || "").toLowerCase();
+        const resType = Number(item.resType);
+        if ([1, 2, 3, 4, 5, 7].includes(resType)) return true;
+        return /\.(mp4|m3u8|mp3|wav|ppt|pptx|pdf|doc|docx|md|png|jpe?g)$/i.test(ext || name);
+    }
+
+    function isDocumentLikeResource(item, info) {
+        const resType = Number(info?.resType ?? item.resType);
+        const ext = String(info?.resExt || item.resExt || item.name || "").toLowerCase();
+        return [3, 4, 5, 7].includes(resType) || /\.(ppt|pptx|pdf|doc|docx|md|png|jpe?g)$/i.test(ext);
+    }
+
+    async function listStudyResourcesByApi(ids, parentId = 0, out = []) {
+        const data = await neumoocPost("/teachmanager/teach-course-res-stu/listResource", {
+            teachCourseId: ids.teachCourseId,
+            currentClassId: ids.currentClassId,
+            name: "",
+            resType: "",
+            studyStatus: "",
+            sortType: 1,
+            isAssess: "",
+            parentId,
+        });
+        const resList = Array.isArray(data?.resList) ? data.resList : [];
+        const folderList = Array.isArray(data?.folderList) ? data.folderList : [];
+        out.push(...resList);
+        for (const folder of folderList) {
+            if (folder?.id != null && String(folder.id) !== String(parentId)) {
+                await listStudyResourcesByApi(ids, folder.id, out);
+            }
+        }
+        return out;
+    }
+
+    function flattenDirectoryResources(nodes, out = []) {
+        if (!Array.isArray(nodes)) return out;
+        nodes.forEach((node) => {
+            if (!node) return;
+            if (node.dirType === "file" || node.resType != null) out.push(node);
+            if (Array.isArray(node.children)) flattenDirectoryResources(node.children, out);
+        });
+        return out;
+    }
+
+    async function listDirectoryResourcesByApi(ids) {
+        const data = await neumoocPost("/teachmanager/teach-course-directory-stu/listTree", {
+            currentClassId: ids.currentClassId,
+            teachCourseId: ids.teachCourseId,
+            sourceType: "",
+            isAssess: "",
+            isReview: "",
+        });
+        return flattenDirectoryResources(data?.treeList || []);
+    }
+
+    async function listAllStudyResourcesByApi(ids) {
+        const byId = new Map();
+        const add = (item) => {
+            if (item?.id && !byId.has(item.id)) byId.set(item.id, item);
+        };
+
+        try {
+            (await listStudyResourcesByApi(ids)).forEach(add);
+        } catch (err) {
+            log("⚠️ 学习资料列表读取失败，继续读取课程目录: " + (err && err.message ? err.message : err));
+        }
+
+        try {
+            (await listDirectoryResourcesByApi(ids)).forEach(add);
+        } catch (err) {
+            log("⚠️ 课程目录读取失败: " + (err && err.message ? err.message : err));
+        }
+
+        return Array.from(byId.values());
+    }
+
+    async function completeStudyResourceByApi(ids, item) {
+        const payload = {
+            teachCourseId: ids.teachCourseId,
+            currentClassId: ids.currentClassId,
+            resId: item.id,
+        };
+        await neumoocPost("/teachmanager/teach-course-res-stu-record/validateStuResInfo", payload);
+        const info = await neumoocPost("/teachmanager/teach-course-res-stu-record/getRecordInfo", payload)
+            .catch(() => item);
+        const resType = Number(info?.resType ?? item.resType);
+
+        if (resType === 1 || resType === 2) {
+            await neumoocPost("/teachmanager/teach-course-res-stu-record/startStudy", payload).catch(() => {});
+            const watchProgress = Math.max(Number(info?.playProgress) || 0, 99999);
+            await neumoocPost("/teachmanager/teach-course-res-stu-record/studyForAudioOrVideo", {
+                ...payload,
+                playStatus: 1,
+                watchProgress: 0,
+            }).catch(() => {});
+            await neumoocPost("/teachmanager/teach-course-res-stu-record/studyForAudioOrVideo", {
+                ...payload,
+                playStatus: 2,
+                watchProgress,
+            }).catch(() => {});
+            await neumoocPost("/teachmanager/teach-course-res-stu-record/studyForAudioOrVideo", {
+                ...payload,
+                playStatus: 3,
+                watchProgress,
+            });
+            return;
+        }
+
+        if (isDocumentLikeResource(item, info)) {
+            await neumoocPost("/teachmanager/teach-course-res-stu-record/startStudy", payload).catch(() => {});
+            await neumoocPost("/teachmanager/teach-course-res-stu-record/startStudyForDocPicMd", payload).catch(() => {});
+            await wait(700);
+            await neumoocPost("/teachmanager/teach-course-res-stu-record/endStudyForDocPicMd", payload);
+            await wait(500);
+            let after = await neumoocPost("/teachmanager/teach-course-res-stu-record/getRecordInfo", payload).catch(() => null);
+            if (Number(after?.studyStatus) !== 2) {
+                await neumoocPost("/teachmanager/teach-course-res-stu-record/endStudyForDocPicMd", payload);
+                await wait(500);
+                after = await neumoocPost("/teachmanager/teach-course-res-stu-record/getRecordInfo", payload).catch(() => after);
+            }
+            if (Number(after?.studyStatus) !== 2) {
+                throw new Error(`文档接口已调用，但状态仍为 ${after?.studyStatus ?? "未知"}`);
+            }
+        }
+    }
+
+    async function directCompleteStudyResourcesByApi() {
+        const ids = extractCourseStudyIds();
+        if (!ids) return false;
+
+        log("⏳ 正在通过学习资料接口读取资源列表...");
+        const resources = (await listAllStudyResourcesByApi(ids))
+            .filter((item) => item?.id && isCompletableStudyResource(item));
+        const pending = resources.filter((item) => Number(item.studyStatus) !== 2);
+        if (!resources.length) {
+            log("⚠️ 当前课程没有找到可直传的视频/PPT/文档资源。");
+            return true;
+        }
+        if (!pending.length) {
+            log(`✅ 找到 ${resources.length} 个学习资料，状态均已完成。`);
+            return true;
+        }
+
+        log(`⏳ 找到 ${pending.length}/${resources.length} 个未完成学习资料，开始直传完成...`);
+        let okCount = 0;
+        for (const item of pending) {
+            try {
+                await completeStudyResourceByApi(ids, item);
+                okCount += 1;
+                log(`✅ 已直传：${item.name || item.id}`);
+            } catch (err) {
+                log(`⚠️ 直传失败：${item.name || item.id} - ${err && err.message ? err.message : err}`);
+            }
+            await wait(350);
+        }
+        log(`✅ 学习资料直传完成：成功 ${okCount}/${pending.length} 个。请刷新页面确认完成状态。`);
+        return true;
+    }
+
+    async function directCompleteCurrentVideo() {
+        try {
+            if (await directCompleteStudyResourcesByApi()) return;
+
+            const targetIds = getPageIds();
+            const video = document.querySelector("#dPlayerVideoMain") || document.querySelector("video");
+            const duration = Number.isFinite(video?.duration) && video.duration > 1 ? Math.ceil(video.duration) : 99999;
+            const captures = getCapturedProgressRequests()
+                .map((item) => ({ ...item, score: scoreProgressRequest(item) }))
+                .filter((item) => item.score >= 4)
+                .map((item) => ({ ...item, replay: makeCompletionReplay(item, targetIds, duration) }))
+                .filter((item) => item.replay.changed)
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 5);
+            if (!captures.length) {
+                const total = getCapturedProgressRequests().length;
+                log(`⚠️ 没有可直传的完成上报接口。已捕获 ${total} 个请求，但都是列表/查询或没有可改的进度字段。`);
+                log("建议：先打开一次该平台任意视频并等待出现播放进度，再回到目标页点直传按钮。");
+                return;
+            }
+            log(`⏳ 正在尝试直传完成状态，候选接口 ${captures.length} 个...`);
+
+            let okCount = 0;
+            for (const item of captures) {
+                const { method, url, body } = item.replay;
+
+                try {
+                    const res = await fetch(url, {
+                        method,
+                        credentials: "include",
+                        headers: buildReplayHeaders(item, body),
+                        body,
+                    });
+                    log(`${res.ok ? "✅" : "⚠️"} ${method} ${new URL(url, location.href).pathname} -> ${res.status}`);
+                    if (res.ok) okCount += 1;
+                    await wait(250);
+                } catch (err) {
+                    log("⚠️ 直传接口失败: " + (err && err.message ? err.message : err));
+                }
+            }
+
+            if (okCount > 0) {
+                log("✅ 已尝试直传完成状态，请刷新课程列表确认是否变为已完成。");
+            } else {
+                log("❌ 没有接口返回成功，可能需要先打开一次该课程视频以捕获精确上报接口。");
+            }
+        } catch (err) {
+            log("❌ 直传完成失败: " + (err && err.toString ? err.toString() : err));
+        }
+    }
+
     const waitForMetadata = (video, timeout = 5000) => {
         return new Promise((resolve, reject) => {
             if (!video) return reject("未找到视频元素");
@@ -514,6 +1268,7 @@ const extractMessageContentFromResponse = (res) => {
     }
 
     document.getElementById('finish-video-btn').addEventListener('click', finishCurrentVideo);
+    document.getElementById('direct-finish-video-btn').addEventListener('click', directCompleteCurrentVideo);
 
     // --- AI 相关核心功能 ---
     const getAiAnswer = (questionBox) => {
