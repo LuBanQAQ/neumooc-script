@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         NEUMOOC 智能助手
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
-// @description  NEUMOOC 智能助手 包含各种功能
+// @version      1.2.0
+// @description  NEUMOOC 智能助手 - 支持单选/多选/判断/填空一键答题
 // @author       LuBanQAQ
 // @license      MIT
 // @match        https://*.neumooc.com/*
@@ -38,6 +38,7 @@
         examContainer: ".respondPaperContainer",
         answerCardNumbers: ".right-box .q-num-box",
         activeAnswerCardNumber: ".right-box .q-num-box.is-q-active",
+        blankInput: "input[type='text']:not([readonly]), textarea:not([readonly]), .el-input__inner:not([readonly])",
     };
 
     // --- AI 配置 ---
@@ -51,12 +52,13 @@
     };
 
     const defaultBulkPrompt = `你是一个严谨的考试答题助手。下面提供一组题目的结构化 JSON 数据，请基于题目内容和选项推理正确答案，并严格遵循以下要求：
-题目 JSON 中包含 selectionType 字段（single/multiple/judge），请结合该字段决定答案格式。
-1. 仅返回 JSON 对象，键为题目序号（index 字段），值为正确选项的大写字母。
+题目 JSON 中包含 selectionType 字段（single/multiple/judge/blank），请结合该字段决定答案格式。
+1. 仅返回 JSON 对象，键为题目序号（index 字段），值为正确选项的大写字母或填空题答案文本。
 2. 当 selectionType 为 single 时，值写单个字母，例如 "A"。
 3. 当 selectionType 为 multiple 时，值写数组或用逗号分隔的多个大写字母，例如 ["A","C"] 或 "A,C"。
-4. 当 selectionType 为 judge 时，使用 A 表示“正确”、B 表示“错误”。
-5. 不要添加解释、Markdown、自然语言描述。
+4. 当 selectionType 为 judge 时，使用 A 表示"正确"、B 表示"错误"。
+5. 当 selectionType 为 blank 时，值写字符串答案。如有多个空，写数组，例如 ["北京","上海"]。
+6. 不要添加解释、Markdown、自然语言描述。
 
 题目数据：
 {{questions}}`;
@@ -115,8 +117,8 @@
     panel.id = "control-panel";
     panel.innerHTML = `
         <div id="control-panel-header">
-            <span id="control-panel-title">🎓 智能助手 <span id="control-panel-version">v1.1.0</span></span>
-            <span id="minimize-btn">—</span>
+            <span id="control-panel-title">🎓 智能助手 <span id="control-panel-version">v1.2.0</span></span>
+            <span id="minimize-btn">-</span>
         </div>
         <div id="control-panel-body">
             <div class="panel-section">
@@ -1254,7 +1256,7 @@ const extractMessageContentFromResponse = (res) => {
             fire('timeupdate');
             fire('ended');
 
-            // 再补一次 UI 层按钮的兼容（若存在“重新播放”按钮，说明已到末尾）
+            // 再补一次 UI 层按钮的兼容（若存在"重新播放"按钮，说明已到末尾）
             const replayBtn = Array.from(document.querySelectorAll('.d-loading span'))
                 .find((el) => /重新播放/.test(el.textContent || ''));
             if (replayBtn) {
@@ -1283,6 +1285,58 @@ const extractMessageContentFromResponse = (res) => {
             );
             if (!questionTitleElement) return reject("无法解析题目正文。");
             const questionText = questionTitleElement.innerText.trim();
+            const typeText = questionBox
+                .querySelector(".question-type .el-tag__content")
+                ?.innerText?.trim();
+            const selectionType = detectQuestionType(questionBox, typeText);
+
+            /* ---- 填空题 ---- */
+            if (selectionType === "blank") {
+                const blankInputs = questionBox.querySelectorAll(selectors.blankInput);
+                // 图片题干检测：DeepSeek 纯文本模型无法理解图片
+                const hasImage = !!questionBox.querySelector("img");
+                if (!questionText && hasImage) {
+                    log("🖼️ 题干为图片，DeepSeek 不支持视觉，请手动填写。");
+                    return reject("图片题干的填空题暂不支持自动解答，请手动填写。");
+                }
+                let blankPrompt = `你是一个严谨的答题助手。请根据以下填空题给出正确答案。\n\n题目：${questionText}\n\n`;
+                if (blankInputs.length > 1) {
+                    blankPrompt += `注意：这是有 ${blankInputs.length} 个空的填空题。请只返回答案文本，多个答案用 " | " 分隔（例如: 北京 | 上海）。不要加解释。`;
+                } else {
+                    blankPrompt += `注意：这是一个填空题。请只返回答案文本，不要加任何解释。`;
+                }
+                log(`💬 正在为填空题 "${questionText.slice(0, 20)}..." 请求AI...`);
+                GM_xmlhttpRequest({
+                    method: "POST",
+                    url: aiConfig.apiEndpoint,
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${aiConfig.apiKey}`,
+                    },
+                    data: JSON.stringify({
+                        model: aiConfig.model,
+                        messages: [{ role: "user", content: blankPrompt }],
+                        temperature: 0,
+                    }),
+                    onload: (res) => {
+                        try {
+                            const raw = extractMessageContentFromResponse(res);
+                            log(`🤖 AI 返回: ${raw}`);
+                            const cleaned = raw
+                                .replace(/^(答案|填空|答|answer)[：:\s]+/gi, "")
+                                .replace(/[。！!]/g, "")
+                                .replace(/\n/g, " ");
+                            const answers = cleaned.split(/[/|｜\n,，;；、]/).map(s => s.trim()).filter(Boolean);
+                            resolve({ type: "blank", answers });
+                        } catch (e) {
+                            reject("AI响应解析失败: " + e.message);
+                        }
+                    },
+                    onerror: (res) => reject("AI请求失败: " + res.statusText),
+                });
+                return;
+            }
+            /* ---- 选择/判断 ---- */
             const options = Array.from(
                 questionBox.querySelectorAll(selectors.optionLabel)
             );
@@ -1327,7 +1381,7 @@ const extractMessageContentFromResponse = (res) => {
                         const answersText = letters
                         .map((l) => optionMap[l])
                         .filter(Boolean);
-                        resolve(answersText);
+                        resolve({ type: "option", answers: answersText });
                     } catch (e) {
                         reject("AI响应解析失败: " + e.message);
                     }
@@ -1361,6 +1415,46 @@ const extractMessageContentFromResponse = (res) => {
         }
         return found;
     }
+
+    const fillBlankInputs = (questionBox, answers) => {
+        const inputs = Array.from(questionBox.querySelectorAll(selectors.blankInput));
+        if (inputs.length === 0) {
+            log("  ⚠️ 未找到填空输入框。");
+            return false;
+        }
+        const answerList = Array.isArray(answers) ? answers : [String(answers || "")];
+        let filled = 0;
+        inputs.forEach((el, idx) => {
+            if (idx >= answerList.length) return;
+            const nativeInput =
+                el.tagName === "INPUT" || el.tagName === "TEXTAREA"
+                    ? el
+                    : el.querySelector("input, textarea");
+            if (!nativeInput) return;
+            const value = String(answerList[idx] || "");
+            try {
+                const NativeSetter = Object.getOwnPropertyDescriptor(
+                    nativeInput.tagName === "TEXTAREA"
+                        ? window.HTMLTextAreaElement.prototype
+                        : window.HTMLInputElement.prototype,
+                    "value"
+                )?.set;
+                if (NativeSetter) {
+                    NativeSetter.call(nativeInput, value);
+                } else {
+                    nativeInput.value = value;
+                }
+            } catch (_) {
+                nativeInput.value = value;
+            }
+            nativeInput.dispatchEvent(new Event("input", { bubbles: true }));
+            nativeInput.dispatchEvent(new Event("change", { bubbles: true }));
+            nativeInput.dispatchEvent(new Event("blur", { bubbles: true }));
+            filled++;
+            log(`  📝 已填入第 ${idx + 1} 空: ${value}`);
+        });
+        return filled > 0;
+    };
 
     const sanitizeLetter = (value = "") =>
         String(value)
@@ -1406,6 +1500,9 @@ const extractMessageContentFromResponse = (res) => {
         if (text.includes("判断")) {
             return "judge";
         }
+        if (text.includes("填空") || box.querySelector(selectors.blankInput)) {
+            return "blank";
+        }
         return "single";
     };
 
@@ -1431,22 +1528,38 @@ const extractMessageContentFromResponse = (res) => {
                         return { letter, text };
                     }
                 );
-                if (!questionText || options.length === 0) {
-                    return null;
+                const hasImage = !!box.querySelector("img");
+                if (selectionType === "blank") {
+                    // 填空题：允许空文本（可能图片题干），但必须有输入框
+                    if (box.querySelectorAll(selectors.blankInput).length === 0) return null;
+                } else {
+                    if (!questionText || options.length === 0) return null;
                 }
-                return {
+                const result = {
                     index,
                     type: typeText || "",
                     selectionType,
-                    question: questionText,
+                    question: questionText || (hasImage ? "[图片题干]" : ""),
                     options,
+                    isImage: hasImage,
                 };
+                if (selectionType === "blank") {
+                    result.blankCount = box.querySelectorAll(selectors.blankInput).length;
+                }
+                return result;
             })
             .filter(Boolean);
     };
 
     const buildBulkPrompt = (questions) => {
-        const serialized = JSON.stringify(questions, null, 2);
+        // 过滤图片题干：DeepSeek 不支持视觉，跳过
+        const imageQuestions = questions.filter((q) => q.isImage);
+        const textQuestions = questions.filter((q) => !q.isImage);
+        if (imageQuestions.length > 0) {
+            log(`🖼️ 跳过 ${imageQuestions.length} 道图片题干题目（第 ${imageQuestions.map((q) => q.index).join("、")} 题），请手动填写。`);
+        }
+        if (textQuestions.length === 0) return null;
+        const serialized = JSON.stringify(textQuestions, null, 2);
         if (bulkPromptTemplate.includes("{{questions}}")) {
             return bulkPromptTemplate.replace("{{questions}}", serialized);
         }
@@ -1567,6 +1680,21 @@ const extractMessageContentFromResponse = (res) => {
                 log(`⚠️ AI 未返回题号 ${question.index} 的答案。`);
                 continue;
             }
+
+            /* ---- 填空题 ---- */
+            if (question.selectionType === "blank") {
+                const blankAnswers = Array.isArray(rawAnswer)
+                    ? rawAnswer
+                    : [String(rawAnswer)];
+                const ok = fillBlankInputs(targetBox, blankAnswers);
+                if (ok) {
+                    log(`✅ 题号 ${question.index} 已填入答案: ${blankAnswers.join("、")}`);
+                } else {
+                    log(`⚠️ 题号 ${question.index} 填空填入失败。`);
+                }
+                continue;
+            }
+
             const letters = normalizeAnswerLetters(rawAnswer);
             if (letters.length === 0) {
                 log(
@@ -1604,9 +1732,13 @@ const extractMessageContentFromResponse = (res) => {
             }
             try {
                 log("正在请求AI解答本题...");
-                const answers = await getAiAnswer(questionBox);
-                if (answers && answers.length > 0) {
-                    await selectOptionByText(questionBox, answers);
+                const result = await getAiAnswer(questionBox);
+                if (result && result.answers && result.answers.length > 0) {
+                    if (result.type === "blank") {
+                        fillBlankInputs(questionBox, result.answers);
+                    } else {
+                        await selectOptionByText(questionBox, result.answers);
+                    }
                 } else {
                     log("⚠️ AI未能提供有效答案。");
                 }
@@ -1619,8 +1751,8 @@ const extractMessageContentFromResponse = (res) => {
     const setBulkBtnState = (running) => {
         if (!answerAllBtn) return;
         if (running) {
-            answerAllBtn.innerText = "⏳ 正在批量答题...";
-            answerAllBtn.disabled = true;
+            answerAllBtn.innerText = "🛑 取消批量答题";
+            answerAllBtn.disabled = false;
             answerAllBtn.classList.remove("btn-info");
             answerAllBtn.classList.add("btn-danger");
         } else {
@@ -1633,7 +1765,8 @@ const extractMessageContentFromResponse = (res) => {
 
     answerAllBtn?.addEventListener("click", async () => {
         if (isBulkJsonAnswering) {
-            log("⏳ 已在执行批量答题，请稍候...");
+            isBulkJsonAnswering = false;
+            log("🛑 已取消批量答题。");
             return;
         }
         try {
@@ -1646,12 +1779,24 @@ const extractMessageContentFromResponse = (res) => {
             }
             log(`🧠 已提取 ${questions.length} 道题，正在请求 AI...`);
             const prompt = buildBulkPrompt(questions);
+            if (!prompt) {
+                log("⚠️ 无可解答的文字题目，请手动填写图片题干。");
+                return;
+            }
             const answerMap = await requestBulkAnswers(prompt);
+            if (!isBulkJsonAnswering) {
+                log("🛑 批量答题已取消。");
+                return;
+            }
             if (!answerMap || Object.keys(answerMap).length === 0) {
                 log("⚠️ AI 未返回任何可用答案。");
                 return;
             }
             await applyBulkAnswers(answerMap, questions);
+            if (!isBulkJsonAnswering) {
+                log("🛑 批量答题已取消（答案已填入部分）。");
+                return;
+            }
             log("🎉 批量答题完成，请检查后提交。");
         } catch (error) {
             log(`❌ 一键答题失败：${error && error.message ? error.message : error}`);
@@ -1697,10 +1842,14 @@ const extractMessageContentFromResponse = (res) => {
         }
 
         try {
-            const answers = await getAiAnswer(questionBox);
+            const result = await getAiAnswer(questionBox);
             if (!isAutoAnswering) return;
-            if (answers && answers.length > 0) {
-                await selectOptionByText(questionBox, answers);
+            if (result && result.answers && result.answers.length > 0) {
+                if (result.type === "blank") {
+                    fillBlankInputs(questionBox, result.answers);
+                } else {
+                    await selectOptionByText(questionBox, result.answers);
+                }
             } else {
                 log("⚠️ AI未能提供答案，跳过本题。");
             }
