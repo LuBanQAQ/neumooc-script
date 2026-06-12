@@ -1341,7 +1341,8 @@ const extractMessageContentFromResponse = (res) => {
                 questionBox.querySelectorAll(selectors.optionLabel)
             );
             const isMultiple =
-                questionBox.querySelector(".el-checkbox-group") !== null;
+                questionBox.querySelector(".el-checkbox-group") !== null ||
+                questionBox.querySelector("label.el-checkbox") !== null;
             if (options.length === 0) return reject("无法解析选项。");
             let prompt = `你是一个严谨的答题助手。请根据以下题目和选项，找出最准确的答案。\n\n题目：${questionText}\n\n选项：\n`;
             const optionMap = {};
@@ -1494,15 +1495,14 @@ const extractMessageContentFromResponse = (res) => {
 
     const detectQuestionType = (box, typeText = "") => {
         const text = typeText || "";
-        if (text.includes("多选") || box.querySelector(".el-checkbox-group")) {
-            return "multiple";
-        }
-        if (text.includes("判断")) {
-            return "judge";
-        }
-        if (text.includes("填空") || box.querySelector(selectors.blankInput)) {
-            return "blank";
-        }
+        if (text.includes("多选")) return "multiple";
+        if (text.includes("判断")) return "judge";
+        if (text.includes("填空") || box.querySelector(selectors.blankInput)) return "blank";
+        // 用实际选项标签判断：checkbox → 多选, radio → 单选
+        if (box.querySelector("label.el-checkbox")) return "multiple";
+        if (box.querySelector("label.el-radio")) return "single";
+        // 兜底：检查选项容器
+        if (box.querySelector(".el-checkbox-group")) return "multiple";
         return "single";
     };
 
@@ -1537,6 +1537,7 @@ const extractMessageContentFromResponse = (res) => {
                 }
                 const result = {
                     index,
+                    boxIndex: idx,
                     type: typeText || "",
                     selectionType,
                     question: questionText || (hasImage ? "[图片题干]" : ""),
@@ -1652,22 +1653,13 @@ const extractMessageContentFromResponse = (res) => {
 
     const applyBulkAnswers = async (answerMap, questionsMeta) => {
         const boxes = Array.from(document.querySelectorAll(selectors.questionBox));
-        const indexToBox = new Map();
+        const boxByIndex = new Map();
         boxes.forEach((box, idx) => {
-            const index = getQuestionIndex(box, `${idx + 1}`);
-            if (!indexToBox.has(index)) {
-                indexToBox.set(index, box);
-            }
-            const trimmed = index.replace(/\.$/, "");
-            if (trimmed && !indexToBox.has(trimmed)) {
-                indexToBox.set(trimmed, box);
-            }
+            boxByIndex.set(idx, box);
         });
 
         for (const question of questionsMeta) {
-            const targetBox =
-                indexToBox.get(question.index) ||
-                indexToBox.get(question.index.replace(/\.$/, ""));
+            const targetBox = boxByIndex.get(question.boxIndex);
             if (!targetBox) {
                 log(`⚠️ 未找到题号 ${question.index} 对应的题目。`);
                 continue;
@@ -1763,41 +1755,51 @@ const extractMessageContentFromResponse = (res) => {
         }
     };
 
+    const TYPE_NAMES = { single: "单选题", multiple: "多选题", judge: "判断题", blank: "填空题" };
+    const TYPE_ORDER = ["single", "multiple", "judge", "blank"];
+
     answerAllBtn?.addEventListener("click", async () => {
         if (isBulkJsonAnswering) {
             isBulkJsonAnswering = false;
+            setBulkBtnState(false);
             log("🛑 已取消批量答题。");
             return;
         }
         try {
             isBulkJsonAnswering = true;
             setBulkBtnState(true);
-            const questions = extractAllQuestions();
-            if (questions.length === 0) {
+            const allQuestions = extractAllQuestions();
+            if (allQuestions.length === 0) {
                 log("❌ 未检测到可解析的题目。");
                 return;
             }
-            log(`🧠 已提取 ${questions.length} 道题，正在请求 AI...`);
-            const prompt = buildBulkPrompt(questions);
-            if (!prompt) {
-                log("⚠️ 无可解答的文字题目，请手动填写图片题干。");
-                return;
+            log(`🧠 已提取 ${allQuestions.length} 道题，按题型分组答题中...`);
+            // 按题型分组
+            const typeGroups = {};
+            for (const q of allQuestions) {
+                if (!typeGroups[q.selectionType]) typeGroups[q.selectionType] = [];
+                typeGroups[q.selectionType].push(q);
             }
-            const answerMap = await requestBulkAnswers(prompt);
-            if (!isBulkJsonAnswering) {
-                log("🛑 批量答题已取消。");
-                return;
+            let totalAnswered = 0;
+            for (const selType of TYPE_ORDER) {
+                const group = typeGroups[selType];
+                if (!group || group.length === 0) continue;
+                if (!isBulkJsonAnswering) break;
+                const typeName = TYPE_NAMES[selType] || selType;
+                log(`📋 ${typeName}（${group.length} 题），正在请求 AI...`);
+                const prompt = buildBulkPrompt(group);
+                if (!prompt) continue;
+                const answerMap = await requestBulkAnswers(prompt);
+                if (!isBulkJsonAnswering) { log("🛑 批量答题已取消。"); break; }
+                if (!answerMap || Object.keys(answerMap).length === 0) {
+                    log(`⚠️ AI 未返回${typeName}的任何答案。`);
+                    continue;
+                }
+                await applyBulkAnswers(answerMap, group);
+                totalAnswered += group.length;
             }
-            if (!answerMap || Object.keys(answerMap).length === 0) {
-                log("⚠️ AI 未返回任何可用答案。");
-                return;
-            }
-            await applyBulkAnswers(answerMap, questions);
-            if (!isBulkJsonAnswering) {
-                log("🛑 批量答题已取消（答案已填入部分）。");
-                return;
-            }
-            log("🎉 批量答题完成，请检查后提交。");
+            if (!isBulkJsonAnswering) return;
+            log(`🎉 批量答题完成（共 ${totalAnswered} 题已填入），请检查后提交。`);
         } catch (error) {
             log(`❌ 一键答题失败：${error && error.message ? error.message : error}`);
         } finally {
