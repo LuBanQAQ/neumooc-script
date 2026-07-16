@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>NEUMOOC 图片题干检测 - 独立测试</title>
+<style>
+  body { font-family: sans-serif; padding: 20px; background: #f0f2f5; max-width: 860px; margin: 0 auto; }
+  h2 { border-bottom: 2px solid #409eff; padding-bottom: 6px; margin-top: 24px; }
+  .item-box { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 12px 0; }
+  .question-type { margin-bottom: 8px; }
+  .el-tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; background: #f0f2f5; color: #606266; }
+  .el-tag__content { }
+  .question-content { margin: 8px 0; }
+  .ques-title { font-weight: 600; margin-bottom: 4px; display: inline; }
+  .question-content img { max-width: 100%; border: 1px solid #ddd; border-radius: 4px; margin: 8px 0; display: block; }
+  input[type="text"] { width: 100%; padding: 8px; border: 1px solid #dcdfe6; border-radius: 4px; margin: 4px 0; box-sizing: border-box; }
+  textarea { width: 100%; padding: 8px; border: 1px solid #dcdfe6; border-radius: 4px; min-height: 48px; }
+  button { padding: 10px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; margin: 4px; }
+  button:hover { opacity: 0.85; }
+  .pass { color: #22c55e; font-weight: bold; }
+  .fail { color: #ef4444; font-weight: bold; }
+  .skip { color: #f59e0b; font-weight: bold; }
+  .log { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 8px; font-family: 'Cascadia Code', monospace; font-size: 13px; white-space: pre-wrap; min-height: 160px; max-height: 480px; overflow-y: auto; line-height: 1.6; }
+  .result-box { border: 2px solid #e5e7eb; border-radius: 8px; padding: 12px; margin: 12px 0; background: #fafafa; }
+  .result-box.pass-border { border-color: #22c55e; background: #f0fdf4; }
+  .result-box.fail-border { border-color: #ef4444; background: #fef2f2; }
+  .result-box.skip-border { border-color: #f59e0b; background: #fffbeb; }
+</style>
+</head>
+<body>
+
+<h1>🧪 图片题干检测 — 独立测试</h1>
+
+<!-- ====== 模拟题目 DOM ====== -->
+<h2>📝 模拟题目（5 道）</h2>
+
+<div class="item-box" id="q1" data-index="1">
+  <div class="question-type"><span class="el-tag"><span class="el-tag__content">填空题</span></span></div>
+  <div class="question-content">
+    <span class="ques-title">1、</span>
+    <div class="question-text">中国的首都是</div>
+    <input type="text" placeholder="空1">
+    <div class="question-text">最大的岛屿是</div>
+    <input type="text" placeholder="空2">
+  </div>
+</div>
+
+<div class="item-box" id="q2" data-index="2">
+  <div class="question-type"><span class="el-tag"><span class="el-tag__content">填空题</span></span></div>
+  <div class="question-content">
+    <span class="ques-title">2、</span>
+    <img src="https://placehold.co/300x60/eee/999?text=%E5%9B%BE%E7%89%87%E9%A2%98%E5%B9%B2" alt="题目图片" style="display:block;">
+    <div class="question-text"></div>
+    <input type="text" placeholder="请填空">
+  </div>
+</div>
+
+<div class="item-box" id="q3" data-index="3">
+  <div class="question-type"><span class="el-tag"><span class="el-tag__content">填空题</span></span></div>
+  <div class="question-content">
+    <span class="ques-title">3、</span>
+    <img src="https://placehold.co/400x100/eee/999?text=%E5%9B%BE%E7%89%87%E9%A2%98%E5%B9%B2" alt="题目图片">
+    <div class="question-text"></div>
+    <input type="text" placeholder="填空1">
+    <input type="text" placeholder="填空2">
+  </div>
+</div>
+
+<div class="item-box" id="q4" data-index="4">
+  <div class="question-type"><span class="el-tag"><span class="el-tag__content">填空题</span></span></div>
+  <div class="question-content">
+    <span class="ques-title">4、</span>
+    <div class="question-text">1 + 1 =</div>
+    <input type="text" placeholder="答案">
+    <div class="question-text">2 × 3 =</div>
+    <input type="text" placeholder="答案">
+  </div>
+</div>
+
+<div class="item-box" id="q5" data-index="5">
+  <div class="question-type"><span class="el-tag"><span class="el-tag__content">填空题</span></span></div>
+  <div class="question-content">
+    <span class="ques-title">5、</span>
+    <img src="https://placehold.co/300x80/eee/999?text=%E5%9B%BE%E7%89%87%E9%A2%98%E5%B9%B2" alt="题目图片">
+    <div class="question-text"></div>
+    <input type="text" placeholder="请填空">
+  </div>
+</div>
+
+<!-- ====== 操作区 ====== -->
+<h2>🔬 测试操作</h2>
+<div>
+  <button onclick="runAllTests()" style="background:#2563eb;color:#fff;font-size:15px;">▶️ 一键全部测试</button>
+  <button onclick="testGetAiAnswer()" style="background:#67c23a;color:#fff;">🧠 getAiAnswer（逐题）</button>
+  <button onclick="testExtractAll()" style="background:#409eff;color:#fff;">📊 extractAllQuestions</button>
+  <button onclick="testBulkBuild()" style="background:#909399;color:#fff;">📦 buildBulkPrompt</button>
+  <button onclick="clearAll()" style="background:#ef4444;color:#fff;">🗑️ 清空</button>
+</div>
+
+<h2>📋 测试日志 & 结果</h2>
+
+<div id="results"></div>
+<div class="log" id="log"></div>
+
+<script>
+// ====== 复制自 neumooc-script.user.js 的核心函数 ======
+
+const selectors = {
+  questionBox: ".item-box",
+  questionText: ".ques-title",
+  blankInput: "input[type='text']:not([readonly]), textarea:not([readonly])",
+};
+
+function log(msg) {
+  const el = document.getElementById('log');
+  const time = new Date().toLocaleTimeString();
+  el.textContent += `[${time}] ${msg}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+
+// ---- detectQuestionType ----
+function detectQuestionType(box, typeText = "") {
+  const t = (typeText || box.querySelector(".question-type .el-tag__content")?.innerText || "").trim();
+  if (t.includes("单选")) return "single";
+  if (t.includes("多选")) return "multiple";
+  if (t.includes("判断")) return "judge";
+  if (t.includes("填空")) return "blank";
+  if (!t) {
+    const inputs = box.querySelectorAll(selectors.blankInput);
+    if (inputs.length > 0) return "blank";
+  }
+  return "unknown";
+}
+
+// ---- 图片检测逻辑（与 neumooc-script 完全一致）----
+// 关键：NEUMOOC 真实页面中，questionText 选择器指向的 .value div
+// 在图片题干时 innerText 为空（图片不在该 div 内）。
+// 测试页面 DOM 不同（题号混在文字里），所以下面用 .question-text 模拟真实行为：
+function checkImageSkip(box) {
+  const hasImage = !!box.querySelector("img");
+  // 模仿真实 NEUMOOC：文字在 .question-text 里，图片在别处
+  const textEl = box.querySelector(".question-text");
+  const textOnly = textEl ? textEl.innerText.trim() : "";
+  if (hasImage && !textOnly) {
+    log(`🖼️ 题干为图片，DeepSeek 不支持视觉，请手动填写。`);
+    return true;
+  }
+  return false;
+}
+
+// ---- 模拟 getAiAnswer（不含 AI 调用，仅测试检测逻辑）----
+async function getAiAnswerSim(box) {
+  const typeText = box.querySelector(".question-type .el-tag__content")?.innerText || "";
+  const selectionType = detectQuestionType(box, typeText);
+  log(`  📌 题型: ${selectionType}`);
+
+  if (selectionType === "blank") {
+    const blankInputs = box.querySelectorAll(selectors.blankInput);
+    const questionText = box.querySelector(".question-text")?.innerText?.trim() || "";
+
+    if (checkImageSkip(box)) {
+      return { type: "blank", skipped: true, reason: "图片题干" };
+    }
+
+    log(`  📝 题干文本: "${questionText.substring(0, 50)}"`);
+    log(`  🔢 填空数: ${blankInputs.length}`);
+    return { type: "blank", skipped: false, blankCount: blankInputs.length, text: questionText };
+  }
+  return { type: selectionType, skipped: false };
+}
+
+// ---- 模拟 extractAllQuestions ----
+function extractAllQuestionsSim() {
+  const boxes = Array.from(document.querySelectorAll(selectors.questionBox));
+  return boxes
+    .map((box, idx) => {
+      const index = (idx + 1).toString();
+      const questionText = box.querySelector(".question-text")?.innerText?.trim() || "";
+      const typeText = box.querySelector(".question-type .el-tag__content")?.innerText?.trim() || "";
+      const selectionType = detectQuestionType(box, typeText);
+      const options = [];
+      const hasImage = !!box.querySelector("img");
+
+      if (selectionType === "blank") {
+        if (box.querySelectorAll(selectors.blankInput).length === 0) return null;
+      } else {
+        if (!questionText || options.length === 0) return null;
+      }
+
+      return {
+        index,
+        type: typeText || "",
+        selectionType,
+        question: questionText || (hasImage ? "[图片题干]" : ""),
+        options,
+        isImage: hasImage,
+      };
+    })
+    .filter(Boolean);
+}
+
+// ---- 模拟 buildBulkPrompt ----
+function buildBulkPromptSim(questions) {
+  const imageQuestions = questions.filter(q => q.isImage);
+  const textQuestions = questions.filter(q => !q.isImage);
+  if (imageQuestions.length > 0) {
+    log(`🖼️ 跳过 ${imageQuestions.length} 道图片题干题目（第 ${imageQuestions.map(q => q.index).join("、")} 题），请手动填写。`);
+  }
+  if (textQuestions.length === 0) return null;
+  return JSON.stringify(textQuestions, null, 2);
+}
+
+// ====== 测试用例 ======
+
+function showResult(title, passed, detail) {
+  const cls = passed ? 'pass-border' : 'fail-border';
+  const icon = passed ? '✅' : '❌';
+  const div = document.createElement('div');
+  div.className = `result-box ${cls}`;
+  div.innerHTML = `<strong>${icon} ${title}</strong><br>${detail}`;
+  document.getElementById('results').appendChild(div);
+}
+
+// 测试 1: getAiAnswer 逐题
+async function testGetAiAnswer() {
+  log('══════ 🧠 getAiAnswer 逐题测试 ══════');
+  const expected = [
+    { id: 'q1', shouldSkip: false, desc: '文字填空题 → 不应跳过' },
+    { id: 'q2', shouldSkip: true,  desc: '图片+1填空 → 应跳过' },
+    { id: 'q3', shouldSkip: true,  desc: '图片+2填空 → 应跳过' },
+    { id: 'q4', shouldSkip: false, desc: '文字填空题 → 不应跳过' },
+    { id: 'q5', shouldSkip: true,  desc: '图片+1填空 → 应跳过' },
+  ];
+
+  for (const tc of expected) {
+    const box = document.getElementById(tc.id);
+    const result = await getAiAnswerSim(box);
+    const ok = result.skipped === tc.shouldSkip;
+    const status = ok ? 'pass' : 'fail';
+    log(`  ${ok ? '✅' : '❌'} ${tc.desc} — ${ok ? '符合预期' : '不符合预期！'}`);
+    showResult(
+      `getAiAnswer(${tc.id}) ${tc.desc}`,
+      ok,
+      `expected skip=${tc.shouldSkip}, actual skip=${result.skipped}`
+    );
+  }
+  log('');
+}
+
+// 测试 2: extractAllQuestions
+function testExtractAll() {
+  log('══════ 📊 extractAllQuestions 测试 ══════');
+  const questions = extractAllQuestionsSim();
+  log(`  提取到 ${questions.length} 道题目`);
+
+  questions.forEach(q => {
+    const tags = [];
+    if (q.isImage) tags.push('isImage');
+    if (q.question === '[图片题干]') tags.push('标记[图片题干]');
+    log(`    题${q.index}: ${q.selectionType} ${tags.join(' ')} "${q.question.substring(0, 40)}"`);
+  });
+
+  // 验证
+  const checks = [
+    { idx: '1', isImage: false, desc: '题1 文字 → isImage=false' },
+    { idx: '2', isImage: true,  desc: '题2 图片 → isImage=true' },
+    { idx: '3', isImage: true,  desc: '题3 图片 → isImage=true' },
+    { idx: '4', isImage: false, desc: '题4 文字 → isImage=false' },
+    { idx: '5', isImage: true,  desc: '题5 图片 → isImage=true' },
+  ];
+
+  checks.forEach(c => {
+    const q = questions.find(q => q.index === c.idx);
+    const ok = q && q.isImage === c.isImage;
+    log(`  ${ok ? '✅' : '❌'} ${c.desc}`);
+    showResult(`extractAllQuestions — ${c.desc}`, ok, `expected isImage=${c.isImage}, actual=${q?.isImage}`);
+  });
+
+  const imgQs = questions.filter(q => q.isImage);
+  log(`  图片题干: ${imgQs.length} 道 (${imgQs.map(q => q.index).join(', ')})`);
+  log('');
+}
+
+// 测试 3: buildBulkPrompt
+function testBulkBuild() {
+  log('══════ 📦 buildBulkPrompt 测试 ══════');
+  const questions = extractAllQuestionsSim();
+
+  // 全量
+  const prompt = buildBulkPromptSim(questions);
+  if (!prompt) {
+    log('  ❌ 全量 prompt 为 null（不应发生）');
+    showResult('buildBulkPrompt(全量)', true, 'prompt 为 null（全为图片？）');
+  } else {
+    const data = JSON.parse(prompt);
+    const indices = data.map(q => q.index);
+    const hasImg = indices.some(i => ['2', '3', '5'].includes(i));
+    log(`  📝 全量包含题号: ${indices.join(', ')}`);
+    log(`  ${hasImg ? '❌ 图片题未被过滤！' : '✅ 图片题已过滤'}`);
+    log(`  预期: 1, 4 | 实际: ${indices.join(', ')}`);
+    const ok = indices.length === 2 && indices.includes('1') && indices.includes('4');
+    showResult(
+      'buildBulkPrompt(全5题) → 仅留文字题',
+      ok,
+      `expected [1,4], actual [${indices}]`
+    );
+  }
+
+  // 仅图片题
+  const imgOnly = [{ index: '2', isImage: true }, { index: '3', isImage: true }];
+  const p2 = buildBulkPromptSim(imgOnly);
+  if (p2 === null) {
+    log('  ✅ 纯图片题目 → prompt=null（正确）');
+    showResult('buildBulkPrompt(纯图片)', true, '返回 null');
+  } else {
+    log('  ❌ 纯图片题目 → 应返回 null');
+    showResult('buildBulkPrompt(纯图片)', false, '未返回 null');
+  }
+  log('');
+}
+
+// 一键全测
+async function runAllTests() {
+  clearAll();
+  await testGetAiAnswer();
+  testExtractAll();
+  testBulkBuild();
+  log('══════ ✅ 全部测试完成 ══════');
+}
+
+function clearAll() {
+  document.getElementById('log').textContent = '';
+  document.getElementById('results').innerHTML = '';
+  log('🧪 测试开始');
+}
+</script>
+</body>
+</html>
