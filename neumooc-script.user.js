@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NEUMOOC 智能助手
 // @namespace    http://tampermonkey.net/
-// @version      1.2.0
+// @version      1.3.0
 // @description  NEUMOOC 智能助手 - 支持单选/多选/判断/填空一键答题
 // @author       LuBanQAQ
 // @license      MIT
@@ -117,7 +117,7 @@
     panel.id = "control-panel";
     panel.innerHTML = `
         <div id="control-panel-header">
-            <span id="control-panel-title">🎓 智能助手 <span id="control-panel-version">v1.2.0</span></span>
+            <span id="control-panel-title">🎓 智能助手 <span id="control-panel-version">v1.3.0</span></span>
             <span id="minimize-btn">-</span>
         </div>
         <div id="control-panel-body">
@@ -136,6 +136,7 @@
                     <button id="direct-finish-video-btn" class="btn-primary">⚡ 学习资料直传完成</button>
                     <button id="finish-video-btn">🎬 完成当前视频</button>
                 </div>
+
             </div>
 
             <div class="collapsible-header">🛠️ 辅助工具</div>
@@ -987,6 +988,55 @@ const extractMessageContentFromResponse = (res) => {
         return [3, 4, 5, 7].includes(resType) || /\.(ppt|pptx|pdf|doc|docx|md|png|jpe?g)$/i.test(ext);
     }
 
+    function isArchiveResource(item) {
+        const ext = String(item.resExt || item.name || "").toLowerCase();
+        return /\.(zip|rar|7z|tar|gz|bz2|xz)$/i.test(ext);
+    }
+
+    function findResourceItemByName(name) {
+        const items = document.querySelectorAll('.resItem');
+        for (const el of items) {
+            const nameSpan = el.querySelector('.file-name__span');
+            if (nameSpan && nameSpan.textContent.trim() === name) return el;
+        }
+        return null;
+    }
+
+    function clickVueButton(btn) {
+        if (!btn || btn.disabled) return false;
+        ['mousedown', 'mouseup', 'click'].forEach(function (t) {
+            btn.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true }));
+        });
+        return true;
+    }
+
+    function findDownloadButtonInItem(resItem) {
+        if (!resItem) return null;
+        const btns = resItem.querySelectorAll('button.el-button');
+        for (const btn of btns) {
+            if ((btn.textContent || '').trim() === '下载') return btn;
+        }
+        return null;
+    }
+
+    async function handleArchiveResource(ids, item) {
+        log('📦 压缩包：' + item.name);
+        var resItem = findResourceItemByName(item.name);
+        if (resItem) {
+            var btn = findDownloadButtonInItem(resItem);
+            if (btn) {
+                log('🖱️ 触发下载：' + item.name);
+                clickVueButton(btn);
+                await wait(800);
+                log('✅ ' + item.name + '：已触发下载。');
+                return;
+            }
+            log('⚠️ ' + item.name + '：未找到下载按钮（可能已完成）。');
+            return;
+        }
+        log('⚠️ ' + item.name + '：页面中未找到该资源项，请手动点击下载。');
+    }
+
     async function listStudyResourcesByApi(ids, parentId = 0, out = []) {
         const data = await neumoocPost("/teachmanager/teach-course-res-stu/listResource", {
             teachCourseId: ids.teachCourseId,
@@ -1080,6 +1130,11 @@ const extractMessageContentFromResponse = (res) => {
                 playStatus: 3,
                 watchProgress,
             });
+            return;
+        }
+
+        if (isArchiveResource(item)) {
+            await handleArchiveResource(ids, item);
             return;
         }
 
