@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         NEUMOOC 智能助手
 // @namespace    http://tampermonkey.net/
-// @version      1.3.0
-// @description  NEUMOOC 智能助手 - 支持单选/多选/判断/填空一键答题
+// @version      1.3.1
+// @description  NEUMOOC 智能助手 - 支持单选/多选/判断/填空一键答题，兼容富文本填空
 // @author       LuBanQAQ
 // @license      MIT
 // @match        https://*.neumooc.com/*
@@ -13,6 +13,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @grant        unsafeWindow
 // @grant        GM_getResourceText
 // @require      https://cdn.jsdelivr.net/npm/sweetalert2@11
 // @resource     sweetalert2_css https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css
@@ -38,7 +39,8 @@
         examContainer: ".respondPaperContainer",
         answerCardNumbers: ".right-box .q-num-box",
         activeAnswerCardNumber: ".right-box .q-num-box.is-q-active",
-        blankInput: "input[type='text']:not([readonly]), textarea:not([readonly]), .el-input__inner:not([readonly])",
+        blankInput: "input:not([type]):not([readonly]):not([disabled]), input[type='text']:not([readonly]):not([disabled]), textarea:not([readonly]):not([disabled])",
+        blankEditor: '[data-slate-editor][contenteditable="true"]',
     };
 
     // --- AI 配置 ---
@@ -65,7 +67,10 @@
     let bulkPromptTemplate = GM_getValue("bulkPromptTemplate", defaultBulkPrompt);
 
     let isAutoAnswering = false;
+    let autoGeneration = 0;
     let isBulkJsonAnswering = false;
+    let bulkTaskPending = false;
+    let singleTaskPending = false;
 
     // --- GUI 样式 ---
     GM_addStyle(`
@@ -117,7 +122,7 @@
     panel.id = "control-panel";
     panel.innerHTML = `
         <div id="control-panel-header">
-            <span id="control-panel-title">🎓 智能助手 <span id="control-panel-version">v1.3.0</span></span>
+            <span id="control-panel-title">🎓 智能助手 <span id="control-panel-version">v1.3.1</span></span>
             <span id="minimize-btn">-</span>
         </div>
         <div id="control-panel-body">
@@ -195,10 +200,20 @@
     const log = (message) => {
         const logArea = document.getElementById("log-area");
         if (logArea) {
-            logArea.innerHTML += `<div>${new Date().toLocaleTimeString()}: ${message}</div>`;
+            const entry = document.createElement("div");
+            entry.textContent = new Date().toLocaleTimeString() + ": " + message;
+            logArea.appendChild(entry);
             logArea.scrollTop = logArea.scrollHeight;
         }
     };
+
+    // 不让助手按钮的鼠标按下动作提前关闭正在编辑的答案框。
+    for (const id of ["ai-single-solve-btn", "answer-all-btn", "full-auto-btn"]) {
+        document.getElementById(id)?.addEventListener("mousedown", event => {
+            if (event.button === 0) { event.preventDefault(); event.stopPropagation(); }
+        });
+        document.getElementById(id)?.addEventListener("mouseup", event => event.stopPropagation());
+    }
 
     // --- GUI 事件绑定 ---
     document.querySelectorAll(".collapsible-header").forEach((header) => {
@@ -402,9 +417,7 @@
         );
 
     document.getElementById("copy-question-btn").addEventListener("click", () => {
-        const questionBox = document.querySelector(
-            `${selectors.questionBox}:not([style*="display: none"])`
-        );
+        const questionBox = getCurrentQuestionBox();
         if (!questionBox) {
             log("❌ 未找到题目。");
             return;
@@ -1347,23 +1360,23 @@ const extractMessageContentFromResponse = (res) => {
 
             /* ---- 填空题 ---- */
             if (selectionType === "blank") {
-                const blankInputs = questionBox.querySelectorAll(selectors.blankInput);
+                const blankInputs = getBlankSlots(questionBox);
+                if (!blankInputs.length) return reject("未找到可见填空控件，请等待编辑器加载完成。");
                 // 图片题干检测：DeepSeek 纯文本模型无法理解图片
-                const hasImage = !!questionBox.querySelector("img");
+                const hasImage = !!questionTitleElement.querySelector("img");
                 if (!questionText && hasImage) {
                     log("🖼️ 题干为图片，DeepSeek 不支持视觉，请手动填写。");
                     return reject("图片题干的填空题暂不支持自动解答，请手动填写。");
                 }
                 let blankPrompt = `你是一个严谨的答题助手。请根据以下填空题给出正确答案。\n\n题目：${questionText}\n\n`;
-                if (blankInputs.length > 1) {
-                    blankPrompt += `注意：这是有 ${blankInputs.length} 个空的填空题。请只返回答案文本，多个答案用 " | " 分隔（例如: 北京 | 上海）。不要加解释。`;
-                } else {
-                    blankPrompt += `注意：这是一个填空题。请只返回答案文本，不要加任何解释。`;
-                }
+                blankPrompt += '共有 ' + blankInputs.length + ' 个空。只返回 JSON 字符串数组，' +
+                    '每个空对应一个字符串，例如 ["北京","上海"]。即使只有一个空也返回数组。不要解释。';
                 log(`💬 正在为填空题 "${questionText.slice(0, 20)}..." 请求AI...`);
                 GM_xmlhttpRequest({
                     method: "POST",
                     url: aiConfig.apiEndpoint,
+                    timeout: 120000,
+                    ontimeout: () => reject(new Error("AI 请求超时，请重试。")),
                     headers: {
                         "Content-Type": "application/json",
                         Authorization: `Bearer ${aiConfig.apiKey}`,
@@ -1377,11 +1390,7 @@ const extractMessageContentFromResponse = (res) => {
                         try {
                             const raw = extractMessageContentFromResponse(res);
                             log(`🤖 AI 返回: ${raw}`);
-                            const cleaned = raw
-                                .replace(/^(答案|填空|答|answer)[：:\s]+/gi, "")
-                                .replace(/[。！!]/g, "")
-                                .replace(/\n/g, " ");
-                            const answers = cleaned.split(/[/|｜\n,，;；、]/).map(s => s.trim()).filter(Boolean);
+                            const answers = normalizeBlankAnswers(raw, blankInputs.length);
                             resolve({ type: "blank", answers });
                         } catch (e) {
                             reject("AI响应解析失败: " + e.message);
@@ -1416,6 +1425,8 @@ const extractMessageContentFromResponse = (res) => {
             GM_xmlhttpRequest({
                 method: "POST",
                 url: aiConfig.apiEndpoint,
+                timeout: 120000,
+                ontimeout: () => reject(new Error("AI 请求超时，请重试。")),
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${aiConfig.apiKey}`,
@@ -1472,44 +1483,294 @@ const extractMessageContentFromResponse = (res) => {
         return found;
     }
 
-    const fillBlankInputs = (questionBox, answers) => {
-        const inputs = Array.from(questionBox.querySelectorAll(selectors.blankInput));
-        if (inputs.length === 0) {
-            log("  ⚠️ 未找到填空输入框。");
+    // --- 填空兼容：答案区域、编辑器组件 API、逐题激活 ---
+    const isAnswerElementVisible = (el) => !!el?.isConnected &&
+        el.getClientRects().length > 0 &&
+        el.ownerDocument.defaultView.getComputedStyle(el).visibility !== "hidden";
+
+    const getCurrentQuestionBox = () => {
+        const boxes = [...document.querySelectorAll(selectors.questionBox)]
+            .filter(isAnswerElementVisible);
+        // 有些 .item-box 是外层布局容器，优先选含有可见、直属题干的题目。
+        const candidates = boxes.filter(box => {
+            const stem = box.querySelector(selectors.questionText);
+            return stem && stem.closest(selectors.questionBox) === box &&
+                isAnswerElementVisible(stem);
+        });
+        if (candidates.length === 1) return candidates[0];
+        return boxes.length === 1 ? boxes[0] : null;
+    };
+
+    const getVisibleBlankFields = (box) =>
+        [...box.querySelectorAll(selectors.blankInput + ', ' + selectors.blankEditor)]
+            .filter(isAnswerElementVisible)
+            .filter(el => !el.parentElement?.closest(selectors.blankEditor));
+
+    const getBlankSlots = (box) => {
+        const slots = [...box.querySelectorAll('.choices-html')].filter(slot =>
+            slot.querySelector('.wangEditor-extra-style, ' + selectors.blankInput + ', ' + selectors.blankEditor));
+        if (slots.length) return slots;
+        return getVisibleBlankFields(box);
+    };
+
+    const getBlankCount = (box) => getBlankSlots(box).length ||
+        Math.max(box.querySelectorAll(selectors.blankInput).length,
+            box.querySelectorAll(selectors.blankEditor).length);
+
+    // 仅遍历 Vue 的组件/VNode 树，使用平台明确 expose 的方法；不搜索业务存储或凭据。
+    const getPageComponents = () => {
+        const page = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        const root = page.document.querySelector('#app');
+        const queue = [root?._vnode, root?.__vue_app__?._container?._vnode];
+        const seen = new Set(), components = new Set();
+        for (let i = 0; i < queue.length && i < 30000; i++) {
+            const vnode = queue[i];
+            if (!vnode || typeof vnode !== 'object' || seen.has(vnode)) continue;
+            seen.add(vnode);
+            if (vnode.component && !vnode.component.isUnmounted) {
+                components.add(vnode.component);
+                queue.push(vnode.component.subTree);
+            }
+            if (Array.isArray(vnode.children)) queue.push(...vnode.children);
+            if (vnode.suspense) queue.push(vnode.suspense.activeBranch);
+        }
+        return [...components];
+    };
+
+    const getSlotWrapper = (slot, components = getPageComponents()) => {
+        const matches = components.filter(component => {
+            const el = component.subTree?.el, exposed = component.exposed;
+            return exposed && typeof exposed.showEditor === 'function' &&
+                typeof exposed.updateEditorFocus === 'function' &&
+                el?.nodeType === 1 && (el === slot || slot.contains(el));
+        });
+        return matches.length === 1 ? matches[0] : null;
+    };
+
+    const isChildComponentOf = (component, parent) => {
+        for (let current = component?.parent, depth = 0; current && depth < 50; current = current.parent, depth++) {
+            if (current === parent) return true;
+        }
+        return false;
+    };
+
+    const findSlotEditor = async (slot, wrapper) => {
+        const components = getPageComponents();
+        for (const component of components) {
+            const exposed = component.exposed;
+            if (!exposed || typeof exposed.getEditorRef !== 'function') continue;
+            if (wrapper && !isChildComponentOf(component, wrapper)) continue;
+            const editor = await exposed.getEditorRef();
+            if (!editor || typeof editor.getEditableContainer !== 'function') continue;
+            const dom = editor.getEditableContainer();
+            // 只接受绑定到当前答案空的实例，绝不按“第一个编辑器”猜测。
+            if (dom?.isConnected && (dom === slot || slot.contains(dom))) {
+                return { component, exposed, editor, dom };
+            }
+        }
+        return null;
+    };
+
+    const escapeBlankHtml = value => String(value).replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+    const blankTextFromHtml = value => {
+        const holder = document.createElement('div');
+        holder.innerHTML = String(value ?? '');
+        holder.querySelectorAll('br').forEach(el => el.replaceWith('\n'));
+        holder.querySelectorAll('p').forEach(el => el.append('\n'));
+        return normalizeBlankText(holder.textContent);
+    };
+
+    const normalizeBlankAnswers = (raw, count) => {
+        let value = raw;
+        if (typeof value === "string") {
+            const cleaned = value.trim().replace(/^\x60\x60\x60(?:json)?\s*/i, "")
+                .replace(/\s*\x60\x60\x60$/, "");
+            try { value = JSON.parse(cleaned); } catch (_) { value = cleaned; }
+        }
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+            value = value.answers ?? value.answer;
+        }
+        if (value === null || value === undefined) return [];
+        if (Array.isArray(value)) {
+            if (value.some(v => v === null || typeof v === "object")) return [];
+            return value.map(v => String(v).trim());
+        }
+        const text = String(value).trim();
+        if (count === 1) return [text];
+        // 兼容旧提示词。保留分数、逗号和分号，不盲目拆分答案内容。
+        return text.split(/\s*[|｜]\s*|\r?\n+/).map(v => v.trim()).filter(Boolean);
+    };
+
+    const normalizeBlankText = (value) => String(value ?? "")
+        .replace(/\r\n/g, "\n").replace(/[\u200B\uFEFF]/g, "").trim();
+
+    const describeBlankControls = (box) => {
+        if (!box) { log("诊断：无法唯一确定当前可见题目。"); return; }
+        const controls = [...box.querySelectorAll('input, textarea, [contenteditable]')];
+        log('诊断：组件数=' + getPageComponents().length + '；答案区域=' + getBlankSlots(box).length + '；题型=' + (box.querySelector('.question-type')?.textContent?.trim() || '未知') +
+            '；原生/编辑区节点=' + controls.length +
+            '；可填写节点=' + getVisibleBlankFields(box).length);
+        controls.forEach((el, i) => {
+            log('控件 ' + (i + 1) + '：' + el.tagName +
+                ' type=' + (el.getAttribute('type') || '(默认)') +
+                ' visible=' + isAnswerElementVisible(el) +
+                ' readonly=' + !!el.readOnly + ' disabled=' + !!el.disabled +
+                ' editable=' + el.getAttribute('contenteditable') +
+                ' class=' + el.className +
+                ' parent=' + el.parentElement?.className);
+        });
+    };
+
+    const waitForBlankSlots = async (box, keepGoing = () => true) => {
+        const deadline = Date.now() + 4000;
+        while (Date.now() < deadline) {
+            if (!keepGoing()) throw new Error('操作已取消。');
+            if (!isAnswerElementVisible(box)) throw new Error('当前题目已切换。');
+            const slots = getBlankSlots(box);
+            if (slots.length) return slots;
+            await wait(100);
+        }
+        describeBlankControls(box);
+        throw new Error('没有找到当前题的答案区域。');
+    };
+
+    const openBlankSlot = async (slot, box, keepGoing) => {
+        if (!keepGoing() || !isAnswerElementVisible(box)) throw new Error('操作取消或题目已切换。');
+        const wrapper = getSlotWrapper(slot);
+        if (wrapper?.props?.disabled) throw new Error('当前答案组件是禁用状态。');
+        if (wrapper) {
+            wrapper.exposed.showEditor();
+        } else {
+            const preview = slot.matches?.('.wangEditor-extra-style') ? slot :
+                slot.querySelector('.wangEditor-extra-style:not(.is-disabled)');
+            if (preview && isAnswerElementVisible(preview)) preview.click();
+        }
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline) {
+            if (!keepGoing() || !isAnswerElementVisible(box) || !slot.isConnected) {
+                throw new Error('操作取消或答案区域已改变。');
+            }
+            const rich = slot.matches?.(selectors.blankEditor) ? slot : slot.querySelector(selectors.blankEditor);
+            if (rich && isAnswerElementVisible(rich)) {
+                const activeWrapper = wrapper || getSlotWrapper(slot);
+                const result = await findSlotEditor(slot, activeWrapper);
+                if (!result) {
+                    throw new Error('已激活富文本，但无法取得平台 getEditorRef 接口（组件数=' +
+                        getPageComponents().length + '，外层接口=' + !!activeWrapper + '）。请把此日志发来。');
+                }
+                if (result.editor.isDisabled?.() || result.editor.getConfig?.().readOnly ||
+                    result.component.props?.readonly) throw new Error('编辑器是只读状态。');
+                return { ...result, wrapper: activeWrapper };
+            }
+            const native = slot.matches?.(selectors.blankInput) ? slot :
+                [...slot.querySelectorAll(selectors.blankInput)].find(isAnswerElementVisible);
+            if (native && isAnswerElementVisible(native)) return { native };
+            await wait(100);
+        }
+        throw new Error('答案区域已定位，但编辑器未能激活。');
+    };
+
+    const fillBlankInputs = async (questionBox, answers, keepGoing = () => true) => {
+        try {
+            const slots = await waitForBlankSlots(questionBox, keepGoing);
+            const answerList = normalizeBlankAnswers(answers, slots.length);
+            if (answerList.length !== slots.length || answerList.some(v => !v.trim())) {
+                throw new Error('答案区域有 ' + slots.length + ' 个，但收到 ' + answerList.length + ' 个答案或包含空答案。');
+            }
+            for (let idx = 0; idx < slots.length; idx++) {
+                const currentSlots = getBlankSlots(questionBox);
+                if (currentSlots.length !== slots.length) throw new Error('答案空数量已改变。');
+                const slot = currentSlots[idx], value = answerList[idx];
+                const target = await openBlankSlot(slot, questionBox, keepGoing);
+                if (!keepGoing() || !isAnswerElementVisible(questionBox)) throw new Error('操作取消或题目已切换。');
+                if (target.editor) {
+                    const { editor, exposed, wrapper } = target;
+                    if (typeof exposed.setTrueContent !== 'function' || !wrapper) {
+                        throw new Error('没有找到平台的 setTrueContent/updateEditorFocus 接口，未改动答案。');
+                    }
+                    // 通过平台自己的组件方法更新 Slate 及 Vue，完全不发送 paste 事件。
+                    const html = value.replace(/\r\n/g, '\n').split('\n')
+                        .map(line => '<p>' + escapeBlankHtml(line) + '</p>').join('');
+                    exposed.setTrueContent(html);
+                    await wait(200);
+                    if (!keepGoing() || !slot.isConnected || !isAnswerElementVisible(questionBox)) {
+                        throw new Error('写入后题目已改变，未继续同步。');
+                    }
+                    if (normalizeBlankText(editor.getText()) !== normalizeBlankText(value)) {
+                        throw new Error('第 ' + (idx + 1) + ' 空编辑器数据校验失败。');
+                    }
+                    // editEditor 在这一步同步外层 v-model，并触发平台原有 answerChange。
+                    wrapper.exposed.updateEditorFocus();
+                    await wait(250);
+                    if (blankTextFromHtml(wrapper.props.modelValue) !== normalizeBlankText(value)) {
+                        throw new Error('第 ' + (idx + 1) + ' 空编辑器已更新，但外层答案数据未同步。');
+                    }
+                    log('✅ 第 ' + (idx + 1) + ' 空：编辑器数据和外层答案数据均已校验。');
+                } else {
+                    const el = target.native, win = el.ownerDocument.defaultView;
+                    const proto = el.tagName === 'TEXTAREA' ? win.HTMLTextAreaElement.prototype : win.HTMLInputElement.prototype;
+                    el.focus();
+                    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
+                    el.dispatchEvent(new win.Event('input', { bubbles: true }));
+                    el.dispatchEvent(new win.Event('change', { bubbles: true }));
+                    el.blur();
+                    await wait(250);
+                    if (!el.isConnected || normalizeBlankText(el.value) !== normalizeBlankText(value)) {
+                        throw new Error('第 ' + (idx + 1) + ' 空普通输入框校验失败。');
+                    }
+                    log('✅ 第 ' + (idx + 1) + ' 空：普通输入框已校验。');
+                }
+            }
+            log('ℹ️ 页面答案已更新；服务器是否保存，请切题返回确认。');
+            return true;
+        } catch (error) {
+            log('⚠️ 填空失败：' + error.message);
             return false;
         }
-        const answerList = Array.isArray(answers) ? answers : [String(answers || "")];
-        let filled = 0;
-        inputs.forEach((el, idx) => {
-            if (idx >= answerList.length) return;
-            const nativeInput =
-                el.tagName === "INPUT" || el.tagName === "TEXTAREA"
-                    ? el
-                    : el.querySelector("input, textarea");
-            if (!nativeInput) return;
-            const value = String(answerList[idx] || "");
-            try {
-                const NativeSetter = Object.getOwnPropertyDescriptor(
-                    nativeInput.tagName === "TEXTAREA"
-                        ? window.HTMLTextAreaElement.prototype
-                        : window.HTMLInputElement.prototype,
-                    "value"
-                )?.set;
-                if (NativeSetter) {
-                    NativeSetter.call(nativeInput, value);
-                } else {
-                    nativeInput.value = value;
-                }
-            } catch (_) {
-                nativeInput.value = value;
+    };
+
+    const resolveQuestionBox = (meta) => {
+        const box = document.querySelectorAll(selectors.questionBox)[meta.boxIndex];
+        if (!box) return null;
+        // 切题后重新定位，同时用题干和题型验证，避免按重复题号误取。
+        const text = box.querySelector(selectors.questionText)?.textContent?.trim() || "";
+        const type = detectQuestionType(box, box.querySelector('.question-type')?.textContent || "");
+        if (type !== meta.selectionType) return null;
+        if (meta.question && meta.question !== '[图片题干]' && text !== meta.question) return null;
+        return box;
+    };
+
+    const activateQuestion = async (meta, keepGoing) => {
+        if (!keepGoing()) throw new Error("操作已取消。");
+        let box = resolveQuestionBox(meta);
+        if (!box) throw new Error('找不到题号 ' + meta.index);
+        if (!isAnswerElementVisible(box)) {
+            const cards = [...document.querySelectorAll(selectors.answerCardNumbers)];
+            const matches = cards.filter(card => {
+                const text = card.textContent.trim();
+                return /^\d+[.、。]?$/.test(text) &&
+                    String(Number(text.replace(/\D/g, ""))) === String(Number(meta.displayIndex ?? meta.index));
+            });
+            const boxes = document.querySelectorAll(selectors.questionBox);
+            // 各题型都从 1 编号，优先用完整答题卡的全局位置。
+            const card = cards.length === boxes.length ? cards[meta.boxIndex] :
+                (matches.length === 1 ? matches[0] : null);
+            if (!card) throw new Error('找不到题号 ' + meta.index + ' 的答题卡入口。');
+            card.click();
+        }
+        const deadline = Date.now() + 7000;
+        while (Date.now() < deadline) {
+            if (!keepGoing()) throw new Error("操作已取消。");
+            box = resolveQuestionBox(meta);
+            if (isAnswerElementVisible(box)) {
+                if (meta.selectionType === "blank") await waitForBlankSlots(box, keepGoing);
+                return box;
             }
-            nativeInput.dispatchEvent(new Event("input", { bubbles: true }));
-            nativeInput.dispatchEvent(new Event("change", { bubbles: true }));
-            nativeInput.dispatchEvent(new Event("blur", { bubbles: true }));
-            filled++;
-            log(`  📝 已填入第 ${idx + 1} 空: ${value}`);
-        });
-        return filled > 0;
+            await wait(100);
+        }
+        throw new Error('切换到题号 ' + meta.index + ' 超时。');
     };
 
     const sanitizeLetter = (value = "") =>
@@ -1552,12 +1813,13 @@ const extractMessageContentFromResponse = (res) => {
         const text = typeText || "";
         if (text.includes("多选")) return "multiple";
         if (text.includes("判断")) return "judge";
-        if (text.includes("填空") || box.querySelector(selectors.blankInput)) return "blank";
+        if (text.includes("填空")) return "blank";
         // 用实际选项标签判断：checkbox → 多选, radio → 单选
         if (box.querySelector("label.el-checkbox")) return "multiple";
         if (box.querySelector("label.el-radio")) return "single";
         // 兜底：检查选项容器
         if (box.querySelector(".el-checkbox-group")) return "multiple";
+        if (box.querySelector(selectors.blankInput + ", " + selectors.blankEditor)) return "blank";
         return "single";
     };
 
@@ -1565,8 +1827,9 @@ const extractMessageContentFromResponse = (res) => {
         const boxes = Array.from(document.querySelectorAll(selectors.questionBox));
         return boxes
             .map((box, idx) => {
-                const index = getQuestionIndex(box, `${idx + 1}`);
-                const questionText = box.querySelector(selectors.questionText)?.innerText.trim();
+                const index = String(idx + 1);
+                const displayIndex = getQuestionIndex(box, index);
+                const questionText = box.querySelector(selectors.questionText)?.textContent?.trim();
                 const typeText = box
                     .querySelector(".question-type .el-tag__content")
                     ?.innerText?.trim();
@@ -1583,16 +1846,17 @@ const extractMessageContentFromResponse = (res) => {
                         return { letter, text };
                     }
                 );
-                const hasImage = !!box.querySelector("img");
+                const hasImage = !!box.querySelector(selectors.questionText + " img, .choices img");
                 if (selectionType === "blank") {
                     // 填空题：允许空文本（可能图片题干），但必须有输入框
-                    if (box.querySelectorAll(selectors.blankInput).length === 0) return null;
+                    if (getBlankCount(box) === 0 && !typeText?.includes("填空")) return null;
                 } else {
                     if (!questionText || options.length === 0) return null;
                 }
                 const result = {
                     index,
                     boxIndex: idx,
+                    displayIndex,
                     type: typeText || "",
                     selectionType,
                     question: questionText || (hasImage ? "[图片题干]" : ""),
@@ -1600,7 +1864,7 @@ const extractMessageContentFromResponse = (res) => {
                     isImage: hasImage,
                 };
                 if (selectionType === "blank") {
-                    result.blankCount = box.querySelectorAll(selectors.blankInput).length;
+                    result.blankCount = getBlankCount(box) || null;
                 }
                 return result;
             })
@@ -1654,6 +1918,8 @@ const extractMessageContentFromResponse = (res) => {
             GM_xmlhttpRequest({
                 method: "POST",
                 url: aiConfig.apiEndpoint,
+                timeout: 120000,
+                ontimeout: () => reject(new Error("AI 请求超时，请重试。")),
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${aiConfig.apiKey}`,
@@ -1707,82 +1973,62 @@ const extractMessageContentFromResponse = (res) => {
     }
 
     const applyBulkAnswers = async (answerMap, questionsMeta) => {
-        const boxes = Array.from(document.querySelectorAll(selectors.questionBox));
-        const boxByIndex = new Map();
-        boxes.forEach((box, idx) => {
-            boxByIndex.set(idx, box);
-        });
-
+        let filled = 0;
+        const keepGoing = () => isBulkJsonAnswering;
         for (const question of questionsMeta) {
-            const targetBox = boxByIndex.get(question.boxIndex);
-            if (!targetBox) {
-                log(`⚠️ 未找到题号 ${question.index} 对应的题目。`);
-                continue;
-            }
-            const rawAnswer =
-                answerMap?.[question.index] ??
-                answerMap?.[question.index.replace(/\.$/, "")] ??
+            if (!keepGoing()) break;
+            if (question.isImage) continue;
+            const rawAnswer = answerMap?.[question.index] ??
                 answerMap?.[String(parseInt(question.index, 10))];
             if (rawAnswer === undefined || rawAnswer === null) {
-                log(`⚠️ AI 未返回题号 ${question.index} 的答案。`);
+                log('⚠️ AI 未返回题号 ' + question.index + ' 的答案。');
                 continue;
             }
-
-            /* ---- 填空题 ---- */
-            if (question.selectionType === "blank") {
-                const blankAnswers = Array.isArray(rawAnswer)
-                    ? rawAnswer
-                    : [String(rawAnswer)];
-                const ok = fillBlankInputs(targetBox, blankAnswers);
-                if (ok) {
-                    log(`✅ 题号 ${question.index} 已填入答案: ${blankAnswers.join("、")}`);
+            try {
+                const targetBox = await activateQuestion(question, keepGoing);
+                if (!keepGoing()) break;
+                let ok;
+                if (question.selectionType === "blank") {
+                    ok = await fillBlankInputs(targetBox, rawAnswer, keepGoing);
                 } else {
-                    log(`⚠️ 题号 ${question.index} 填空填入失败。`);
+                    const letters = normalizeAnswerLetters(rawAnswer);
+                    ok = await selectOptionByLetter(targetBox, letters, question.selectionType);
                 }
-                continue;
-            }
-
-            const letters = normalizeAnswerLetters(rawAnswer);
-            if (letters.length === 0) {
-                log(
-                    `⚠️ 无法解析题号 ${question.index} 的答案：${JSON.stringify(rawAnswer)}`
-                );
-                continue;
-            }
-            if (question.selectionType !== "multiple" && letters.length > 1) {
-                log(
-                    `⚠️ 题号 ${question.index} 为${question.selectionType}题，但 AI 返回多个选项，将只取第一个。`
-                );
-            }
-            const success = await selectOptionByLetter(
-                targetBox,
-                letters,
-                question.selectionType
-            );
-            if (success) {
-                log(`✅ 题号 ${question.index} 已填入选项 ${letters.join(",")}`);
-            } else {
-                log(`⚠️ 题号 ${question.index} 的选项 ${letters.join(",")} 未匹配。`);
+                if (ok) {
+                    filled++;
+                    log('✅ 题号 ' + question.index + ' 已填写，请检查保存状态。');
+                } else {
+                    log('⚠️ 题号 ' + question.index + ' 填写失败。');
+                }
+                await wait(350);
+            } catch (error) {
+                log('⚠️ 题号 ' + question.index + '：' + error.message);
             }
         }
+        return filled;
     };
 
     document
         .getElementById("ai-single-solve-btn")
         .addEventListener("click", async () => {
-            const questionBox = document.querySelector(
-                `${selectors.questionBox}:not([style*="display: none"])`
-            );
+            if (bulkTaskPending || isAutoAnswering || singleTaskPending) {
+                log("⚠️ 已有答题任务运行，请等待或停止后再操作。");
+                return;
+            }
+            const questionBox = getCurrentQuestionBox();
             if (!questionBox) {
                 log("❌ 未找到当前题目。");
                 return;
             }
             try {
+                singleTaskPending = true;
                 log("正在请求AI解答本题...");
+                await waitForCurrentBlankIfNeeded(questionBox);
                 const result = await getAiAnswer(questionBox);
+                if (getCurrentQuestionBox() !== questionBox) throw new Error("题目已切换，请重新解答当前题。");
                 if (result && result.answers && result.answers.length > 0) {
                     if (result.type === "blank") {
-                        fillBlankInputs(questionBox, result.answers);
+                        if (!await fillBlankInputs(questionBox, result.answers)) throw new Error("填空未完成。");
                     } else {
                         await selectOptionByText(questionBox, result.answers);
                     }
@@ -1791,8 +2037,22 @@ const extractMessageContentFromResponse = (res) => {
                 }
             } catch (error) {
                 log(`❌ AI搜题出错: ${error}`);
+            } finally {
+                singleTaskPending = false;
             }
         });
+
+    const diagnoseButton = document.createElement('button');
+    diagnoseButton.id = 'diagnose-blank-btn';
+    diagnoseButton.textContent = '🔎 检查当前填空控件';
+    diagnoseButton.addEventListener('mousedown', event => event.preventDefault());
+    diagnoseButton.addEventListener('click', () => describeBlankControls(getCurrentQuestionBox()));
+    document.getElementById('copy-question-btn')?.parentElement?.appendChild(diagnoseButton);
+
+    const waitForCurrentBlankIfNeeded = async (box) => {
+        const type = box.querySelector(".question-type")?.textContent || "";
+        if (detectQuestionType(box, type) === "blank") await waitForBlankSlots(box);
+    };
 
     const answerAllBtn = document.getElementById("answer-all-btn");
     const setBulkBtnState = (running) => {
@@ -1816,11 +2076,17 @@ const extractMessageContentFromResponse = (res) => {
     answerAllBtn?.addEventListener("click", async () => {
         if (isBulkJsonAnswering) {
             isBulkJsonAnswering = false;
-            setBulkBtnState(false);
-            log("🛑 已取消批量答题。");
+            answerAllBtn.disabled = true;
+            answerAllBtn.innerText = "正在停止…";
+            log("🛑 正在取消批量答题，等待当前操作结束。");
+            return;
+        }
+        if (bulkTaskPending || isAutoAnswering || singleTaskPending) {
+            log("⚠️ 已有答题任务运行，请等待或停止后再操作。");
             return;
         }
         try {
+            bulkTaskPending = true;
             isBulkJsonAnswering = true;
             setBulkBtnState(true);
             const allQuestions = extractAllQuestions();
@@ -1850,15 +2116,15 @@ const extractMessageContentFromResponse = (res) => {
                     log(`⚠️ AI 未返回${typeName}的任何答案。`);
                     continue;
                 }
-                await applyBulkAnswers(answerMap, group);
-                totalAnswered += group.length;
+                totalAnswered += await applyBulkAnswers(answerMap, group);
             }
             if (!isBulkJsonAnswering) return;
-            log(`🎉 批量答题完成（共 ${totalAnswered} 题已填入），请检查后提交。`);
+            log(`🎉 批量答题完成（${totalAnswered} 题填写成功），请切题检查保存状态后自行提交。`);
         } catch (error) {
             log(`❌ 一键答题失败：${error && error.message ? error.message : error}`);
         } finally {
             isBulkJsonAnswering = false;
+            bulkTaskPending = false;
             setBulkBtnState(false);
         }
     });
@@ -1872,7 +2138,7 @@ const extractMessageContentFromResponse = (res) => {
         );
         if (!activeNumberEl) return false;
         const lastNumberEl = allNumbers[allNumbers.length - 1];
-        if (activeNumberEl.innerText.trim() === lastNumberEl.innerText.trim()) {
+        if (activeNumberEl === lastNumberEl) {
             return true;
         }
         return false;
@@ -1880,6 +2146,7 @@ const extractMessageContentFromResponse = (res) => {
 
     const fullAutoBtn = document.getElementById("full-auto-btn");
     const stopAutoAnswering = () => {
+        autoGeneration++;
         isAutoAnswering = false;
         fullAutoBtn.innerText = "⚡️ 开始全自动 AI 答题";
         fullAutoBtn.classList.remove("btn-danger");
@@ -1888,10 +2155,10 @@ const extractMessageContentFromResponse = (res) => {
     };
 
     const runAutoAnswerStep = async () => {
-        if (!isAutoAnswering) return;
-        const questionBox = document.querySelector(
-            `${selectors.questionBox}:not([style*="display: none"])`
-        );
+        const generation = autoGeneration;
+        const keepGoing = () => isAutoAnswering && generation === autoGeneration;
+        if (!keepGoing()) return;
+        const questionBox = getCurrentQuestionBox();
         if (!questionBox) {
             log("🏁 未找到题目，流程结束。");
             stopAutoAnswering();
@@ -1899,11 +2166,13 @@ const extractMessageContentFromResponse = (res) => {
         }
 
         try {
+            await waitForCurrentBlankIfNeeded(questionBox);
             const result = await getAiAnswer(questionBox);
-            if (!isAutoAnswering) return;
+            if (!keepGoing()) return;
+            if (getCurrentQuestionBox() !== questionBox) throw new Error("题目已切换，自动答题停止。");
             if (result && result.answers && result.answers.length > 0) {
                 if (result.type === "blank") {
-                    fillBlankInputs(questionBox, result.answers);
+                    if (!await fillBlankInputs(questionBox, result.answers, keepGoing)) throw new Error("填空未完成。");
                 } else {
                     await selectOptionByText(questionBox, result.answers);
                 }
@@ -1911,10 +2180,13 @@ const extractMessageContentFromResponse = (res) => {
                 log("⚠️ AI未能提供答案，跳过本题。");
             }
         } catch (error) {
+            if (!keepGoing()) return;
             log(`❌ AI搜题出错: ${error}`);
             stopAutoAnswering();
             return;
         }
+
+        if (!keepGoing()) return;
 
         if (isLastQuestion()) {
             log("🏁 已到达最后一题（答题卡判断），自动循环停止。");
@@ -1926,7 +2198,7 @@ const extractMessageContentFromResponse = (res) => {
         log(`...等待 ${delay / 1000} 秒后进入下一题...`);
 
         setTimeout(() => {
-            if (!isAutoAnswering) return;
+            if (!keepGoing()) return;
             const clickedNext = clickButton(
                 selectors.nextButton,
                 "自动点击“下一题”。",
@@ -1937,7 +2209,7 @@ const extractMessageContentFromResponse = (res) => {
                 log("🏁 已到达最后一题（按钮判断），自动循环停止。");
                 stopAutoAnswering();
             } else {
-                setTimeout(runAutoAnswerStep, 1500);
+                setTimeout(() => { if (keepGoing()) runAutoAnswerStep(); }, 1500);
             }
         }, delay);
     };
@@ -1946,6 +2218,10 @@ const extractMessageContentFromResponse = (res) => {
         if (isAutoAnswering) {
             stopAutoAnswering();
         } else {
+            if (bulkTaskPending || singleTaskPending) {
+                log("⚠️ 已有答题任务运行，请等待或停止后再操作。");
+                return;
+            }
             isAutoAnswering = true;
             fullAutoBtn.innerText = "🛑 停止全自动答题";
             fullAutoBtn.classList.remove("btn-primary");
