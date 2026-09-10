@@ -77,7 +77,7 @@ node --test tests/blank-editor.test.cjs
 
 适合学生用户，性价比高：
 
-- 🎁 **[领取阿里云高校学生通用权益 - 300元优惠券](https://university.aliyun.com/course/promotion19-activity?clubTaskBiz=subTask..12218312..10256..&userCode=jgg8c9cg)**
+- 🎁 **[领取阿里云高校学生通用权益 - 300元优惠券](https://university.aliyun.com/course/promotion28-activity?clubTaskBiz=subTask..12847170..10290..&userCode=qh6zq5mv)**
 - 提供免费额度和学生优惠
 - 支持多种大模型（通义千问等）
 - [阿里云百炼控制台](https://www.aliyun.com/product/bailian)
