@@ -2,7 +2,7 @@
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=LuBanQAQ/neumooc-script&type=date&legend=top-left)](https://star-history.com/#LuBanQAQ/neumooc-script)
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-orange.svg)](https://polyformproject.org/licenses/noncommercial/1.0.0/)
 ![Version](https://img.shields.io/badge/version-1.1.0-brightgreen.svg)
 ![Language](https://img.shields.io/badge/language-JavaScript-yellow.svg)
 
@@ -162,4 +162,4 @@ API 地址: https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
 
 ## 📄 开源协议
 
-本项目采用 **MIT** 开源许可证。详情请见仓库中的 `LICENSE` 文件。
+本项目采用 **PolyForm Noncommercial License 1.0.0**。详情请见仓库中的 [LICENSE 文件](./LICENSE) 及官方许可证页面 [PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/)。

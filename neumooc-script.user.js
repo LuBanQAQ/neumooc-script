@@ -4,7 +4,7 @@
 // @version      1.3.1
 // @description  NEUMOOC 智能助手 - 支持单选/多选/判断/填空一键答题，兼容富文本填空
 // @author       LuBanQAQ
-// @license      MIT
+// @license      PolyForm-Noncommercial-1.0.0
 // @match        https://*.neumooc.com/*
 // @match        https://study.neusoft.edu.cn/*
 // @downloadURL  https://raw.githubusercontent.com/LuBanQAQ/neumooc-script/main/neumooc-script.user.js
