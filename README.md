@@ -3,10 +3,18 @@
 
 [![Star History Chart](https://api.star-history.com/svg?repos=LuBanQAQ/neumooc-script&type=date&legend=top-left)](https://star-history.com/#LuBanQAQ/neumooc-script)
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-orange.svg)](https://polyformproject.org/licenses/noncommercial/1.0.0/)
-![Version](https://img.shields.io/badge/version-1.1.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.4.0-brightgreen.svg)
 ![Language](https://img.shields.io/badge/language-JavaScript-yellow.svg)
 
 一个为大连东软信息学院的NEUMOOC平台设计的油猴（Tampermonkey）脚本。
+
+## v1.4.0 更新
+
+- 新增「🛡️ 反检测 / 解锁」面板，两个开关默认关闭、状态持久化：
+  - **考试反检测**：始终报告页面可见且窗口聚焦，并拦截监考 `recordLog` 的 `logType=18` 上报，返回伪造的成功响应。
+  - **解除复制粘贴限制**：允许自由选择、复制、粘贴，过滤页面对 `copy`/`cut`/`paste` 的拦截。
+- 脚本改为 `document-start` 启动，反检测 hook 能在页面自身逻辑之前安装；控制面板仍等 `body` 就绪后再创建。
+- 开关开启后立即生效；关闭后需刷新页面才会完全恢复页面原有行为。
 
 ## v1.3.1 更新
 
@@ -22,9 +30,10 @@
 ```pwsh
 node --check neumooc-script.user.js
 node --test tests/blank-editor.test.cjs
+node --test tests/anti-check.test.cjs
 ```
 
-回归测试模拟编辑器与答案组件的交互，不访问 AI 服务或学习平台。编辑器适配依赖平台当前的 Vue 组件结构及其暴露方法；平台升级后需要重新验证。页面数据校验通过不代表服务器已保存，使用时请切题返回确认。
+回归测试模拟编辑器与答案组件的交互，以及反检测模块的可见性伪装、日志拦截与剪贴板修复，不访问 AI 服务或学习平台。编辑器适配依赖平台当前的 Vue 组件结构及其暴露方法；平台升级后需要重新验证。页面数据校验通过不代表服务器已保存，使用时请切题返回确认。
 
 ## 🚀 安装与设置
 
@@ -122,6 +131,21 @@ API 地址: https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
 - 验证网络连接是否正常
 - 检查 API 地址是否正确
 - 确认 API Key 权限是否足够
+
+## 🛡️ 反检测 / 解锁开关
+
+控制面板中的「🛡️ 反检测 / 解锁」分组提供两个独立开关，**默认关闭**，状态保存在 Tampermonkey 存储中：
+
+| 开关 | 作用 | 生效方式 |
+|------|------|----------|
+| 考试反检测 | 伪装 `document.hidden` / `visibilityState` / `hasFocus`，并拦截监考 `recordLog` 的 `logType=18` 上报（返回伪造成功响应） | 开启后立即安装 |
+| 解除复制粘贴限制 | 清理页面在 `copy` / `cut` / `paste` 上的拦截，恢复选择与剪贴板操作 | 开启后立即安装 |
+
+说明：
+
+- 关闭开关后脚本不再新增拦截，但已经安装的 hook 无法完全撤销，**需要刷新页面**才恢复到页面原始行为。
+- 反检测依赖脚本在 `document-start` 运行，请确保没有其他扩展或脚本管理器修改 `@run-at`。
+- 上述功能仅用于前端行为兼容性研究，请自行确认使用场景是否合规。
 
 ## ⚠️ 免责声明
 
