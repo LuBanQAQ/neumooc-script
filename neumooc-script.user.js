@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         NEUMOOC 智能助手
 // @namespace    http://tampermonkey.net/
-// @version      1.3.1
-// @description  NEUMOOC 智能助手 - 支持单选/多选/判断/填空一键答题，兼容富文本填空
+// @version      1.4.0
+// @description  NEUMOOC 智能助手 - 支持单选/多选/判断/填空一键答题，可选考试反检测与复制粘贴解锁
 // @author       LuBanQAQ
 // @license      PolyForm-Noncommercial-1.0.0
 // @match        https://*.neumooc.com/*
 // @match        https://study.neusoft.edu.cn/*
+// @run-at       document-start
 // @downloadURL  https://raw.githubusercontent.com/LuBanQAQ/neumooc-script/main/neumooc-script.user.js
 // @updateURL    https://raw.githubusercontent.com/LuBanQAQ/neumooc-script/main/neumooc-script.user.js
 // @grant        GM_addStyle
@@ -24,6 +25,359 @@
 (function () {
     "use strict";
 
+    // --- 功能开关（持久化，默认关闭） ---
+    let antiDetectEnabled = GM_getValue("antiDetectEnabled", false) === true;
+    let clipboardUnlockEnabled = GM_getValue("clipboardUnlockEnabled", false) === true;
+
+    /* #region anti-check
+     * 考试反检测模块（可选，通过面板开关启用）。
+     *  - 伪装 document.hidden / visibilityState / hasFocus，避免切页或失焦被判为离开考试。
+     *  - 接管 XMLHttpRequest，拦截监考 recordLog 的 logType=18 上报并伪造成功响应。
+     *  - 解除页面复制粘贴限制（独立开关）。
+     * 脚本以 document-start 运行，因此这些 hook 能在页面自身逻辑之前安装。
+     */
+
+    const ANTI_CHECK_RECORD_LOG_PATH = "/web-api/smartexam/invigilation-center/recordLog";
+    const ANTI_CHECK_BLOCKED_LOG_TYPE = "18";
+    const ANTI_CHECK_MOCK_BODY = JSON.stringify({ code: 0, msg: "", data: true });
+    const ANTI_CHECK_MOCK_STATES = [1, 2, 3, 4];
+    const CLIPBOARD_BLOCKED_EVENTS = ["copy", "cut", "paste", "selectstart", "select", "contextmenu", "dragstart", "drag"];
+
+    function parseAntiCheckBody(body) {
+        if (body == null) return null;
+        if (typeof body === "string") {
+            try {
+                return JSON.parse(body);
+            } catch (error) {
+                const matched = body.match(/(?:^|&)logType=([^&]*)/);
+                return matched ? { logType: decodeURIComponent(matched[1]) } : null;
+            }
+        }
+        if (typeof body !== "object") return null;
+        if (typeof body.forEach === "function") {
+            const plain = {};
+            try {
+                body.forEach((value, name) => {
+                    plain[name] = value;
+                });
+                return plain;
+            } catch (error) {
+                return null;
+            }
+        }
+        return body;
+    }
+
+    function isBlockedExamLog(url, body) {
+        if (typeof url !== "string" || !url.includes(ANTI_CHECK_RECORD_LOG_PATH)) return false;
+        const payload = parseAntiCheckBody(body);
+        if (!payload || typeof payload !== "object") return false;
+        return String(payload.logType) === ANTI_CHECK_BLOCKED_LOG_TYPE;
+    }
+
+    function installAntiDetectHooks(pageWindow, pageDocument, notify) {
+        const report = typeof notify === "function" ? notify : () => {};
+        const w = pageWindow || window;
+        const d = pageDocument || document;
+
+        try {
+            Object.defineProperty(d, "hidden", { get: () => false, configurable: true });
+            Object.defineProperty(d, "visibilityState", { get: () => "visible", configurable: true });
+        } catch (error) {
+            report(`⚠️ 页面可见性伪装失败：${error}`);
+        }
+        try {
+            d.hasFocus = () => true;
+        } catch (error) {
+            report(`⚠️ hasFocus 伪装失败：${error}`);
+        }
+
+        const OriginalXHR = w.XMLHttpRequest;
+        if (typeof OriginalXHR !== "function") {
+            report("⚠️ 未找到 XMLHttpRequest，监考日志拦截未安装。");
+            return null;
+        }
+
+        class HookedXHR extends OriginalXHR {
+            constructor() {
+                super();
+                this.__antiCheckUrl = "";
+                this.__antiCheckMethod = "";
+            }
+
+            open(method, url, ...rest) {
+                this.__antiCheckMethod = method;
+                this.__antiCheckUrl = url;
+                return super.open(method, url, ...rest);
+            }
+
+            send(body) {
+                if (isBlockedExamLog(this.__antiCheckUrl, body)) {
+                    report(`🛡️ 已拦截监考上报 ${this.__antiCheckMethod || "POST"} ${this.__antiCheckUrl}（logType=18）`);
+                    this.__antiCheckMockResponse();
+                    return undefined;
+                }
+                return super.send(body);
+            }
+
+            __antiCheckMockResponse() {
+                const self = this;
+                const EventCtor = w.Event || (typeof Event === "undefined" ? null : Event);
+                const ProgressCtor = w.ProgressEvent || (typeof ProgressEvent === "undefined" ? null : ProgressEvent);
+                let index = 0;
+
+                const defineReadonly = (prop, value) => {
+                    try {
+                        Object.defineProperty(self, prop, { get: () => value, configurable: true });
+                    } catch (error) {}
+                };
+
+                const dispatch = (type) => {
+                    try {
+                        if (EventCtor) self.dispatchEvent(new EventCtor(type));
+                    } catch (error) {}
+                };
+
+                const nextState = () => {
+                    if (index >= ANTI_CHECK_MOCK_STATES.length) return;
+                    const readyState = ANTI_CHECK_MOCK_STATES[index++];
+                    defineReadonly("readyState", readyState);
+                    if (readyState >= 2) {
+                        defineReadonly("status", 200);
+                        defineReadonly("statusText", "OK");
+                        defineReadonly("responseURL", self.__antiCheckUrl);
+                    }
+                    if (readyState === 4) {
+                        defineReadonly("response", ANTI_CHECK_MOCK_BODY);
+                        defineReadonly("responseText", ANTI_CHECK_MOCK_BODY);
+                    }
+                    try {
+                        if (typeof self.onreadystatechange === "function") self.onreadystatechange();
+                        dispatch("readystatechange");
+                        if (readyState === 4) {
+                            try {
+                                if (ProgressCtor) self.dispatchEvent(new ProgressCtor("load"));
+                                if (ProgressCtor) self.dispatchEvent(new ProgressCtor("loadend"));
+                            } catch (error) {}
+                            if (typeof self.onload === "function") self.onload();
+                        }
+                    } catch (error) {}
+                    if (index < ANTI_CHECK_MOCK_STATES.length) setTimeout(nextState, 0);
+                };
+
+                setTimeout(nextState, 0);
+            }
+        }
+
+        w.XMLHttpRequest = HookedXHR;
+        report("🛡️ 考试反检测已启用：页面始终报告为可见且聚焦。");
+        return HookedXHR;
+    }
+
+    function installClipboardUnlockHooks(pageWindow, pageDocument, notify) {
+        const report = typeof notify === "function" ? notify : () => {};
+        const w = pageWindow || window;
+        const d = pageDocument || document;
+        let blockWriteText = false;
+
+        // 1. 在 copy/cut 事件期间屏蔽 clipboard.writeText，防止页面清空剪贴板。
+        try {
+            const clipboard = w.navigator && w.navigator.clipboard;
+            if (clipboard && typeof clipboard.writeText === "function") {
+                const originalWriteText = clipboard.writeText.bind(clipboard);
+                clipboard.writeText = function (text) {
+                    if (blockWriteText) {
+                        report(`🛡️ 已拦截 clipboard.writeText("${text}")`);
+                        return Promise.resolve();
+                    }
+                    return originalWriteText(text);
+                };
+            }
+        } catch (error) {}
+
+        // 2. 过滤 copy/cut 上的空监听器和「preventDefault + writeText」恶意监听器。
+        const EventTargetProto = w.EventTarget && w.EventTarget.prototype;
+        if (EventTargetProto && typeof EventTargetProto.addEventListener === "function") {
+            const originalAdd = EventTargetProto.addEventListener;
+            const isEmptyHandler = (handler) => {
+                try {
+                    const compact = Function.prototype.toString.call(handler).replace(/\s/g, "");
+                    return compact === "()=>{}" || compact === "function(){}";
+                } catch (error) {
+                    return false;
+                }
+            };
+            const isHostileHandler = (handler) => {
+                try {
+                    const src = Function.prototype.toString.call(handler);
+                    return src.includes("preventDefault") && src.includes("writeText");
+                } catch (error) {
+                    return false;
+                }
+            };
+            EventTargetProto.addEventListener = function (type, handler, options) {
+                if ((type === "copy" || type === "cut") && typeof handler === "function") {
+                    if (isEmptyHandler(handler)) {
+                        report(`🛡️ 已过滤空的 ${type} 监听器`);
+                        return undefined;
+                    }
+                    if (isHostileHandler(handler)) {
+                        report(`🛡️ 已过滤恶意的 ${type} 监听器`);
+                        return undefined;
+                    }
+                }
+                return originalAdd.call(this, type, handler, options);
+            };
+        }
+
+        // 3. 捕获阶段接管 preventDefault，让浏览器正常写入/读取剪贴板。
+        ["copy", "cut"].forEach((type) => {
+            d.addEventListener(type, (event) => {
+                blockWriteText = true;
+                try {
+                    event.preventDefault = () => {};
+                } catch (error) {}
+                setTimeout(() => {
+                    blockWriteText = false;
+                }, 0);
+            }, true);
+        });
+        d.addEventListener("paste", (event) => {
+            try {
+                event.preventDefault = () => {};
+            } catch (error) {}
+        }, true);
+
+        // 4. CSS 解除 user-select 限制。
+        try {
+            if (d.createElement) {
+                const style = d.createElement("style");
+                style.textContent = `
+                    * {
+                        -webkit-user-select: text !important;
+                        -moz-user-select: text !important;
+                        -ms-user-select: text !important;
+                        user-select: text !important;
+                        pointer-events: auto !important;
+                    }
+                `;
+                const mount = () => {
+                    try {
+                        (d.head || d.documentElement).appendChild(style);
+                    } catch (error) {}
+                };
+                if (d.readyState === "loading") {
+                    d.addEventListener("DOMContentLoaded", mount, { once: true });
+                } else {
+                    mount();
+                }
+            }
+        } catch (error) {}
+
+        // 5. 清理元素上通过 on* 属性绑定的复制限制。
+        const clearInlineHandlers = (el) => {
+            CLIPBOARD_BLOCKED_EVENTS.forEach((type) => {
+                try {
+                    el["on" + type] = null;
+                } catch (error) {}
+            });
+        };
+        try {
+            const ObserverCtor = w.MutationObserver;
+            const startObserver = () => {
+                if (!ObserverCtor || !d.body) return;
+                try {
+                    const observer = new ObserverCtor((mutations) => {
+                        mutations.forEach((mutation) => {
+                            mutation.addedNodes.forEach((node) => {
+                                if (node.nodeType !== 1) return;
+                                clearInlineHandlers(node);
+                                if (node.querySelectorAll) node.querySelectorAll("*").forEach(clearInlineHandlers);
+                            });
+                        });
+                    });
+                    observer.observe(d.body, { childList: true, subtree: true });
+                } catch (error) {}
+            };
+            if (d.body) {
+                startObserver();
+            } else {
+                d.addEventListener("DOMContentLoaded", startObserver, { once: true });
+            }
+        } catch (error) {}
+
+        // 6. 吞掉 document/window 上 on* 属性赋值。
+        CLIPBOARD_BLOCKED_EVENTS.forEach((type) => {
+            [d, w].forEach((target) => {
+                try {
+                    Object.defineProperty(target, "on" + type, {
+                        get: () => null,
+                        set: () => {},
+                        configurable: true,
+                    });
+                } catch (error) {}
+            });
+        });
+
+        report("🛡️ 复制粘贴限制解除已启用。");
+        return true;
+    }
+    /* #endregion anti-check */
+
+    // 面板尚未创建时先缓存提示，创建后统一输出到运行日志。
+    const antiCheckQueue = [];
+    let antiCheckNotify = (message) => {
+        antiCheckQueue.push(message);
+    };
+
+    function getPageWindow() {
+        try {
+            return typeof unsafeWindow !== "undefined" && unsafeWindow ? unsafeWindow : window;
+        } catch (error) {
+            return window;
+        }
+    }
+
+    let antiDetectInstalled = false;
+    let clipboardUnlockInstalled = false;
+
+    function installAntiDetect() {
+        if (antiDetectInstalled) return true;
+        try {
+            const hooked = installAntiDetectHooks(getPageWindow(), document, (message) => antiCheckNotify(message));
+            if (!hooked) return false;
+            antiDetectInstalled = true;
+            return true;
+        } catch (error) {
+            antiCheckNotify(`❌ 考试反检测安装失败：${error}`);
+            return false;
+        }
+    }
+
+    function installClipboardUnlock() {
+        if (clipboardUnlockInstalled) return true;
+        try {
+            installClipboardUnlockHooks(getPageWindow(), document, (message) => antiCheckNotify(message));
+            clipboardUnlockInstalled = true;
+            return true;
+        } catch (error) {
+            antiCheckNotify(`❌ 复制粘贴解锁安装失败：${error}`);
+            return false;
+        }
+    }
+
+    if (antiDetectEnabled) antiDetectEnabled = installAntiDetect();
+    if (clipboardUnlockEnabled) clipboardUnlockEnabled = installClipboardUnlock();
+
+    // anti-check 需要尽早安装，因此脚本以 document-start 启动；
+    // 面板等 DOM 依赖代码等 body 就绪后再初始化。
+    if (document.body) {
+        startAssistant();
+    } else {
+        document.addEventListener("DOMContentLoaded", startAssistant, { once: true });
+    }
+
+    function startAssistant() {
     installStudyProgressProbe();
 
     // --- 配置区 ---
@@ -111,6 +465,15 @@
         .collapsible-header:has(+ .collapsible-content.visible)::after { content: "收起"; }
         .collapsible-content { display: none; margin: -1px 0 9px; padding: 0 10px 10px; background: rgba(255,255,255,0.86); border: 1px solid #e6ebf2; border-top: 0; border-radius: 0 0 8px 8px; }
         .collapsible-content.visible { display: block; }
+        .switch-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid #eef2f7; }
+        .switch-row:last-of-type { border-bottom: 0; padding-bottom: 4px; }
+        .switch-copy { flex: 1; min-width: 0; }
+        .switch-name { color: #334155; font-weight: 800; font-size: 12px; }
+        .switch-desc { margin-top: 3px; color: #7c8798; font-size: 11px; line-height: 1.5; }
+        #control-panel .switch-btn { width: auto; min-width: 66px; min-height: 28px; flex: none; justify-content: center; padding: 4px 10px; border-radius: 999px; border-color: #e2e8f0; background: #f1f5f9; color: #64748b; font-size: 12px; font-weight: 700; }
+        #control-panel .switch-btn.is-on { background: #ecfdf5; border-color: #a7f3d0; color: #047857; box-shadow: 0 2px 8px rgba(4,120,87,0.12); }
+        #control-panel .switch-btn.is-on:hover { background: #d1fae5; border-color: #6ee7b7; }
+        .switch-hint { margin-top: 8px; color: #94a3b8; font-size: 11px; line-height: 1.5; }
 
     /* 悬浮球样式 */
     #floating-ball { position: fixed; width: 48px; height: 48px; border-radius: 50%; background-color: #2563eb; color: #fff; display: none; align-items: center; justify-content: center; box-shadow: 0 8px 18px rgba(37,99,235,0.24); z-index: 100001; cursor: move; user-select: none; }
@@ -122,7 +485,7 @@
     panel.id = "control-panel";
     panel.innerHTML = `
         <div id="control-panel-header">
-            <span id="control-panel-title">🎓 智能助手 <span id="control-panel-version">v1.3.1</span></span>
+            <span id="control-panel-title">🎓 智能助手 <span id="control-panel-version">v1.4.0</span></span>
             <span id="minimize-btn">-</span>
         </div>
         <div id="control-panel-body">
@@ -142,6 +505,25 @@
                     <button id="finish-video-btn">🎬 完成当前视频</button>
                 </div>
 
+            </div>
+
+            <div class="collapsible-header">🛡️ 反检测 / 解锁</div>
+            <div class="collapsible-content">
+                <div class="switch-row">
+                    <div class="switch-copy">
+                        <div class="switch-name">考试反检测</div>
+                        <div class="switch-desc">始终报告页面可见且窗口聚焦，并拦截监考 recordLog 的 logType=18 上报。</div>
+                    </div>
+                    <button id="toggle-anti-detect" class="switch-btn" aria-pressed="false">未启用</button>
+                </div>
+                <div class="switch-row">
+                    <div class="switch-copy">
+                        <div class="switch-name">解除复制粘贴限制</div>
+                        <div class="switch-desc">允许自由选择、复制、粘贴，清理页面对剪贴板事件的拦截。</div>
+                    </div>
+                    <button id="toggle-clipboard-unlock" class="switch-btn" aria-pressed="false">未启用</button>
+                </div>
+                <div class="switch-hint">启用后立即生效；关闭后需刷新页面才能完全恢复页面原有行为。</div>
             </div>
 
             <div class="collapsible-header">🛠️ 辅助工具</div>
@@ -221,6 +603,59 @@
             header.nextElementSibling.classList.toggle("visible")
         );
     });
+
+    // --- 反检测 / 解锁开关 ---
+    const syncAntiCheckSwitch = (buttonId, enabled) => {
+        const button = document.getElementById(buttonId);
+        if (!button) return;
+        button.textContent = enabled ? "已启用" : "未启用";
+        button.classList.toggle("is-on", enabled);
+        button.setAttribute("aria-pressed", enabled ? "true" : "false");
+    };
+
+    const bindAntiCheckSwitch = (options) => {
+        const button = document.getElementById(options.buttonId);
+        if (!button) return;
+        button.addEventListener("click", () => {
+            const next = !options.isEnabled();
+            const applied = next ? options.install() : false;
+            options.setEnabled(applied);
+            GM_setValue(options.storageKey, applied);
+            syncAntiCheckSwitch(options.buttonId, applied);
+            if (applied) {
+                log(`✅ ${options.name}已启用。`);
+            } else if (next) {
+                log(`❌ ${options.name}启用失败，已保持关闭。`);
+            } else {
+                log(`⏹️ ${options.name}已关闭，刷新页面后完全生效。`);
+            }
+        });
+        syncAntiCheckSwitch(options.buttonId, options.isEnabled());
+    };
+
+    bindAntiCheckSwitch({
+        buttonId: "toggle-anti-detect",
+        storageKey: "antiDetectEnabled",
+        name: "考试反检测",
+        isEnabled: () => antiDetectEnabled,
+        setEnabled: (value) => {
+            antiDetectEnabled = value;
+        },
+        install: () => installAntiDetect(),
+    });
+    bindAntiCheckSwitch({
+        buttonId: "toggle-clipboard-unlock",
+        storageKey: "clipboardUnlockEnabled",
+        name: "解除复制粘贴限制",
+        isEnabled: () => clipboardUnlockEnabled,
+        setEnabled: (value) => {
+            clipboardUnlockEnabled = value;
+        },
+        install: () => installClipboardUnlock(),
+    });
+
+    antiCheckNotify = (message) => log(message);
+    antiCheckQueue.splice(0).forEach((message) => log(message));
 
     document.getElementById("save-config-btn").addEventListener("click", () => {
         aiConfig.apiKey = document.getElementById("api-key-input").value.trim();
@@ -2230,4 +2665,5 @@ const extractMessageContentFromResponse = (res) => {
             runAutoAnswerStep();
         }
     });
+    }
 })();
