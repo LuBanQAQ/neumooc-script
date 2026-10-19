@@ -202,3 +202,8 @@ API 地址: https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
 ## 📄 开源协议
 
 本项目采用 **PolyForm Noncommercial License 1.0.0**。详情请见仓库中的 [LICENSE 文件](./LICENSE) 及官方许可证页面 [PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/)。
+
+> [!IMPORTANT]
+> **禁止商用：** 本项目仅授权用于上述许可证所允许的非商业目的。未经版权持有人另行书面授权，不得将本项目、其修改版本或衍生作品直接或间接用于任何商业目的，包括但不限于出售、付费分发、提供收费服务，以及集成或捆绑至商业产品或服务中。
+
+个人学习、研究、实验等非商业用途，以及许可证明确允许的非商业组织用途，不受上述限制。具体许可范围及条件以 [LICENSE 文件](./LICENSE) 为准；如需商业授权，请联系项目作者。
