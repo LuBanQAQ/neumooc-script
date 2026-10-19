@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         NEUMOOC 智能助手
 // @namespace    http://tampermonkey.net/
-// @version      1.4.0
-// @description  NEUMOOC 智能助手 - 支持单选/多选/判断/填空一键答题，可选考试反检测与复制粘贴解锁
+// @version      1.5.0
+// @description  NEUMOOC 智能助手 - 支持单选/多选/判断/填空一键答题，可选考试反检测、复制粘贴解锁与快捷键收起面板
 // @author       LuBanQAQ
 // @license      PolyForm-Noncommercial-1.0.0
 // @match        https://*.neumooc.com/*
@@ -324,6 +324,32 @@
     }
     /* #endregion anti-check */
 
+    /* #region panel-hotkey
+     * 快捷键一键收起 / 恢复控制面板。
+     *  - Alt+X：切换面板显示状态；隐藏时不保留悬浮球，便于在考试等场景快速收起。
+     */
+    const PANEL_HOTKEY_LABEL = "Alt+X";
+
+    function isTogglePanelHotkey(event) {
+        if (!event || !event.altKey) return false;
+        if (event.ctrlKey || event.metaKey || event.shiftKey) return false;
+        if (event.code === "KeyX") return true;
+        return typeof event.key === "string" && event.key.toLowerCase() === "x";
+    }
+
+    function createPanelToggle({ panel, floatingBall, onToggle }) {
+        if (!panel) return () => false;
+        return () => {
+            const isVisible = panel.style.display !== "none";
+            const nextVisible = !isVisible;
+            panel.style.display = nextVisible ? "" : "none";
+            if (floatingBall) floatingBall.style.display = "none";
+            if (typeof onToggle === "function") onToggle(nextVisible);
+            return nextVisible;
+        };
+    }
+    /* #endregion panel-hotkey */
+
     // 面板尚未创建时先缓存提示，创建后统一输出到运行日志。
     const antiCheckQueue = [];
     let antiCheckNotify = (message) => {
@@ -474,6 +500,8 @@
         #control-panel .switch-btn.is-on { background: #ecfdf5; border-color: #a7f3d0; color: #047857; box-shadow: 0 2px 8px rgba(4,120,87,0.12); }
         #control-panel .switch-btn.is-on:hover { background: #d1fae5; border-color: #6ee7b7; }
         .switch-hint { margin-top: 8px; color: #94a3b8; font-size: 11px; line-height: 1.5; }
+        .panel-hotkey-hint { margin-top: 7px; text-align: right; color: #94a3b8; font-size: 11px; }
+        .panel-hotkey-hint kbd { display: inline-block; padding: 1px 5px; border: 1px solid #dfe5ee; border-bottom-width: 2px; border-radius: 4px; background: #fff; color: #64748b; font-family: inherit; font-size: 10px; font-weight: 700; }
 
     /* 悬浮球样式 */
     #floating-ball { position: fixed; width: 48px; height: 48px; border-radius: 50%; background-color: #2563eb; color: #fff; display: none; align-items: center; justify-content: center; box-shadow: 0 8px 18px rgba(37,99,235,0.24); z-index: 100001; cursor: move; user-select: none; }
@@ -485,7 +513,7 @@
     panel.id = "control-panel";
     panel.innerHTML = `
         <div id="control-panel-header">
-            <span id="control-panel-title">🎓 智能助手 <span id="control-panel-version">v1.4.0</span></span>
+            <span id="control-panel-title">🎓 智能助手 <span id="control-panel-version">v1.5.0</span></span>
             <span id="minimize-btn">-</span>
         </div>
         <div id="control-panel-body">
@@ -558,6 +586,7 @@
             <div class="panel-section">
                 <div class="panel-section-title">运行日志</div>
                 <div id="log-area">等待操作...</div>
+                <div class="panel-hotkey-hint">⌨️ <kbd>Alt</kbd> + <kbd>X</kbd> 显示 / 隐藏面板</div>
             </div>
         </div>
     `;
@@ -656,6 +685,28 @@
 
     antiCheckNotify = (message) => log(message);
     antiCheckQueue.splice(0).forEach((message) => log(message));
+
+    // --- 快捷键：Alt+X 显示 / 隐藏面板 ---
+    const togglePanelByHotkey = createPanelToggle({
+        panel,
+        floatingBall,
+        onToggle: (visible) =>
+            log(
+                visible
+                    ? `⌨️ ${PANEL_HOTKEY_LABEL} 面板已显示。`
+                    : `⌨️ ${PANEL_HOTKEY_LABEL} 面板已隐藏，再按一次恢复。`
+            ),
+    });
+    document.addEventListener(
+        "keydown",
+        (event) => {
+            if (!isTogglePanelHotkey(event)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            togglePanelByHotkey();
+        },
+        true
+    );
 
     document.getElementById("save-config-btn").addEventListener("click", () => {
         aiConfig.apiKey = document.getElementById("api-key-input").value.trim();

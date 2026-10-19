@@ -3,10 +3,16 @@
 
 [![Star History Chart](https://api.star-history.com/svg?repos=LuBanQAQ/neumooc-script&type=date&legend=top-left)](https://star-history.com/#LuBanQAQ/neumooc-script)
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-orange.svg)](https://polyformproject.org/licenses/noncommercial/1.0.0/)
-![Version](https://img.shields.io/badge/version-1.4.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.5.0-brightgreen.svg)
 ![Language](https://img.shields.io/badge/language-JavaScript-yellow.svg)
 
 一个为大连东软信息学院的NEUMOOC平台设计的油猴（Tampermonkey）脚本。
+
+## v1.5.0 更新
+
+- 新增快捷键 `Alt + X`：一键显示 / 隐藏控制面板，面板底部有按键提示。
+- 快捷键收起时同时隐藏悬浮球，不留下可见痕迹；再按一次即可恢复面板。
+- 快捷键在捕获阶段处理，输入框或页面自身按键监听都不会拦截它。
 
 ## v1.4.0 更新
 
@@ -31,6 +37,7 @@
 node --check neumooc-script.user.js
 node --test tests/blank-editor.test.cjs
 node --test tests/anti-check.test.cjs
+node --test tests/panel-hotkey.test.cjs
 ```
 
 回归测试模拟编辑器与答案组件的交互，以及反检测模块的可见性伪装、日志拦截与剪贴板修复，不访问 AI 服务或学习平台。编辑器适配依赖平台当前的 Vue 组件结构及其暴露方法；平台升级后需要重新验证。页面数据校验通过不代表服务器已保存，使用时请切题返回确认。
@@ -131,6 +138,14 @@ API 地址: https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
 - 验证网络连接是否正常
 - 检查 API 地址是否正确
 - 确认 API Key 权限是否足够
+
+## ⌨️ 快捷键
+
+| 快捷键 | 作用 |
+|--------|------|
+| `Alt + X` | 显示 / 隐藏控制面板（面板底部有提示） |
+
+按下快捷键后，控制面板和悬浮球会一起收起，再次按下即可恢复面板。收起动作只影响界面显示，已经启用的答题与反检测功能不受影响。
 
 ## 🛡️ 反检测 / 解锁开关
 

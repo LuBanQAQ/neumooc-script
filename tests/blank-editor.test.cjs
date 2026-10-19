@@ -108,9 +108,9 @@ function createHarness() {
     return { api: context.api, slot, question, logs };
 }
 
-test('release metadata and panel both use v1.4.0', () => {
-    assert.match(source, /\/\/ @version\s+1\.4\.0\s/);
-    assert.match(source, /id="control-panel-version">v1\.4\.0<\/span>/);
+test('release metadata and panel both use v1.5.0', () => {
+    assert.match(source, /\/\/ @version\s+1\.5\.0\s/);
+    assert.match(source, /id="control-panel-version">v1\.5\.0<\/span>/);
     assert.match(source, /\/\/ @grant\s+unsafeWindow/);
     assert.match(source, /\/\/ @updateURL\s+https:\/\/raw\.githubusercontent\.com\/LuBanQAQ\/neumooc-script\/main\/neumooc-script\.user\.js/);
 });
