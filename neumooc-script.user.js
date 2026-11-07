@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NEUMOOC 智能助手
 // @namespace    http://tampermonkey.net/
-// @version      1.5.0
+// @version      1.5.1
 // @description  NEUMOOC 智能助手 - 支持单选/多选/判断/填空一键答题，可选考试反检测、复制粘贴解锁与快捷键收起面板
 // @author       LuBanQAQ
 // @license      PolyForm-Noncommercial-1.0.0
