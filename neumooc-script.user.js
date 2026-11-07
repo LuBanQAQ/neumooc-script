@@ -7,6 +7,8 @@
 // @license      PolyForm-Noncommercial-1.0.0
 // @match        https://*.neumooc.com/*
 // @match        https://study.neusoft.edu.cn/*
+// @match        https://study.nsu.edu.cn/*
+// @match        https://*.nsu.edu.cn/*
 // @run-at       document-start
 // @downloadURL  https://raw.githubusercontent.com/LuBanQAQ/neumooc-script/main/neumooc-script.user.js
 // @updateURL    https://raw.githubusercontent.com/LuBanQAQ/neumooc-script/main/neumooc-script.user.js
