@@ -6,7 +6,7 @@
 ![Version](https://img.shields.io/badge/version-1.5.0-brightgreen.svg)
 ![Language](https://img.shields.io/badge/language-JavaScript-yellow.svg)
 
-一个为大连东软信息学院的NEUMOOC平台设计的油猴（Tampermonkey）脚本。
+一个为东软学院的NEUMOOC平台设计的油猴（Tampermonkey）脚本。
 
 ## v1.5.0 更新
 
